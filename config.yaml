@@ -8,28 +8,76 @@ lecture_file: diuretics.pptx  # or .pdf (if PDF support is added)
 
 organisation:
   headings: true
-  tags: false
+  tags: true
   both: false
   no_preference: false
+  sections: true
 
 features:
   topic_map: true
-  index: false
+  index: true
   glossary: true
-  summary_review_sheet: false
+  summary_review_sheet: true
   none: false
 
 flashcard_type:
   level_1: true
-  level_2: false
+  level_2: true
   both: false
 
-answer_format: bullet_points  # options: minimal, bullet_points, short_paragraph, mixture, best
+answer_format: best
 
-cloze: yes  # options: yes, no, dont_mind
+cloze: auto_detect
 
 exam: Year 2 MBBS  # or Finals, PLAB, USMLE, Other: [short answer]
 
+# Semantic Processing Configuration
+semantic_processing:
+  enabled: true
+  chunk_size: 500  # Maximum characters per semantic chunk
+  overlap: 50      # Character overlap between chunks
+  similarity_threshold: 0.7  # Threshold for grouping similar slides
+  embedding_model: tfidf  # Use TF-IDF for embeddings (lightweight)
+  duplicate_removal: true  # Remove duplicate flashcards
+  duplicate_threshold: 0.8  # Similarity threshold for duplicates
+
+# Quality Control Configuration
+quality_control:
+  enabled: true
+  anti_repetition:
+    enabled: true
+    similarity_threshold: 0.7
+    merge_strategy: keep_best
+  conciseness:
+    enabled: true
+    max_sentences: 2
+    max_words: 25
+    split_strategy: atomic_cards
+  depth_enforcement:
+    enabled: true
+    level_1_rules:
+      - basic_recall_only
+      - definitions_ok
+      - no_clinical_reasoning
+    level_2_rules:
+      - must_have_reasoning
+      - interpretation_required
+      - no_basic_definitions
+  cloze_optimization:
+    enabled: true
+    auto_detect: true
+    patterns:
+      - numbers_percentages
+      - acronyms
+      - definitions
+      - lists
+    max_blanks: 3
+  context_enrichment:
+    enabled: true
+    level_1_minimal_context: true
+    level_2_reasoning_required: true
+
+# Enhanced Prompt Template with Quality Control
 prompt_template: |
   I am an expert medical educator and flashcard generator for medical students.
   Before I begin, I always ask myself:
@@ -59,33 +107,102 @@ prompt_template: |
   - Assume the student will study these cards without any reference to the original lecture
   - Use specific, direct language that makes sense on its own
 
+  QUALITY CONTROL RULES (CRITICAL):
+
+  1. **ANTI-REPETITION RULE**: 
+     - NEVER create multiple cards testing the same core fact
+     - If I see similar content, I create ONE optimal card and skip duplicates
+     - Examples to avoid: "What does FEV1 stand for?" vs "What is FEV1?" vs "What does FEV₁ represent?"
+     - Instead, create ONE: "What does FEV1 measure in spirometry?" Answer: "Forced expiratory volume in 1 second"
+
+  2. **CONCISENESS RULE**:
+     - Answers must be 1-2 sentences maximum
+     - Split long answers into multiple focused cards
+     - Avoid paragraph-length responses
+     - Each card tests ONE specific concept
+
+  3. **DEPTH ENFORCEMENT RULE**:
+     - **Level 1**: Basic recall only - definitions, names, normal values, classifications
+     - **Level 2**: Must include reasoning, interpretation, comparison, or application
+     - NEVER put clinical reasoning in Level 1
+     - NEVER put basic definitions in Level 2
+
+  4. **CLOZE OPPORTUNITY RULE**:
+     - When cloze is enabled, automatically convert these into cloze format:
+       * Definitions with key terms: "{{c1::FEV1}} measures {{c2::forced expiratory volume in 1 second}}"
+       * Normal values: "Normal FEV1/FVC ratio is {{c1::>70-80%}}"
+       * Numbers and ratios: "Hemoglobin binds CO {{c1::200-250}} times more strongly than O₂"
+       * Key components: "The three types of COPD are {{c1::emphysema}}, {{c2::chronic bronchitis}}, and {{c3::small airway disease}}"
+
+  5. **CONTEXT ENRICHMENT RULE**:
+     - For Level 1: Add minimal context if it helps retention
+     - For Level 2: Always include clinical reasoning or application
+     - Avoid pure memorization cards without any context
+
   I ALWAYS follow these reasoning steps and rules:
 
-  1. **Tiering Content**
-     - **Tier 1:** Must-know core concepts (frameworks, mechanisms, drug classes, definitions, things that appear in multiple slides)
-     - **Tier 2:** Mechanisms, drug actions, receptor targets, neurotransmitters, key findings, pattern recognition
-     - **Tier 3:** Dense stats, long prevalence reports, or debates (skip unless essential for exams; only use overarching takeaways)
+  1. **LEVEL 1 vs LEVEL 2 FLASHCARD DISTINCTION**
+     
+     **LEVEL 1 FLASHCARDS (Basic Recall & Information):**
+     - **Purpose**: Test basic knowledge, definitions, and standalone facts
+     - **Question Types**: "What is...?", "Define...", "Name...", "List...", "Identify..."
+     - **Content Focus**: 
+       * Definitions and terminology
+       * Basic mechanisms and processes
+       * Drug names, classes, and basic actions
+       * Normal values and ranges
+       * Anatomical structures and locations
+       * Basic classifications and categories
+     - **Examples**:
+       * "What does FEV1 measure in spirometry?" Answer: "Forced expiratory volume in 1 second"
+       * "What is the normal FEV1/FVC ratio?" Answer: ">70-80%"
+       * "Name the three main types of COPD." Answer: "Emphysema, chronic bronchitis, small airway disease"
+     
+     **LEVEL 2 FLASHCARDS (Interpretation & Application):**
+     - **Purpose**: Test understanding, integration, and clinical reasoning
+     - **Question Types**: "What pattern suggests...?", "Why does...?", "How would you interpret...?", "Compare...", "What explains...?"
+     - **Content Focus**:
+       * Pattern recognition and interpretation
+       * Clinical reasoning and decision-making
+       * Integration of multiple concepts
+       * Comparison and contrast
+       * Cause-and-effect relationships
+       * Application of knowledge to clinical scenarios
+     - **Examples**:
+       * "What pattern on spirometry suggests early ILD?" Answer: "Reduced FVC with preserved FEV1/FVC ratio"
+       * "Why does asthma show a scooped curve on flow-volume loops?" Answer: "Airway obstruction causes reduced peak flow and concave expiratory curve"
+       * "Compare the spirometry patterns of COPD vs restrictive disease." Answer: "COPD: reduced FEV1/FVC ratio; Restrictive: reduced FVC with normal ratio"
 
-  2. **Chunking and Rewriting**
+  2. **Content Tiering Strategy**
+     - **Tier 1 (Level 1)**: Must-know core concepts, definitions, basic mechanisms
+     - **Tier 2 (Level 2)**: Advanced understanding, pattern recognition, clinical application
+     - **Tier 3**: Skip dense stats, long prevalence reports, or debates unless essential
+
+  3. **Chunking and Rewriting**
      - I go slide-by-slide.
      - For each fact, I ask: Is this recallable? Is it portable? Can it be written as a focused question?
      - I rewrite into a slightly open-ended but focused question, with a short, accurate answer.
+     - I determine the appropriate level based on the complexity and type of knowledge being tested.
+     - I check for repetition and consolidate similar concepts.
 
-  3. **Style Consistency**
+  4. **Style Consistency**
      - I use compact answers, no fluff.
      - Question stems provide just enough context.
      - I avoid trivia, lecturer names, lecture titles, or generic outline questions.
      - I only include facts that could appear on an exam or in clinical teaching.
 
-  4. **Bridging Gaps and Rewording**
+  5. **Bridging Gaps and Rewording**
      - I break dense slides into multiple flashcards.
      - I reword passive info into active recall.
      - If a slide has implicit logic, I make it explicit in the flashcard.
 
-  5. **Meta-Level Thinking**
+  6. **Meta-Level Thinking**
      - For each card, I ask: Would this be useful for a med student revising for exams or clinical practice? Does this card train recall, or is it too vague?
+     - For Level 1: Does this test basic knowledge that every student must know?
+     - For Level 2: Does this test understanding and application that demonstrates deeper learning?
+     - I check: Is this card repetitive, too wordy, or at the wrong depth level?
 
-  6. **Formatting and Output**
+  7. **Formatting and Output**
      - Each card must be in this exact format:
        Question: [Your question here] | Answer: [Your answer here]
      - Do not use any other format. Do not use Markdown, bullet points, or newlines between question and answer.
@@ -94,11 +211,11 @@ prompt_template: |
      - I only include cloze deletions if explicitly requested.
      - I only include extra info if it appears in the slide.
      - I group cards by lecture section or use tags if requested.
-     - I use Level 1 or Level 2 cards based on user input.
+     - I use Level 1 or Level 2 cards based on user input and content complexity.
 
   Now, I will analyze the following slide (text and images) and generate only high-yield, exam-relevant flashcards as described above:
   {batch_text}
 
 model_name: gpt-4o
-max_tokens: 300
-temperature: 0.7 
+max_tokens: 2000
+temperature: 0.3 

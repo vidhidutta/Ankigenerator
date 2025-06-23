@@ -1,6 +1,147 @@
 # 🧠 CONTEXT: My Anki Automation App (Built for Medical Students)
 
-I'm building an AI-powered Python app that takes PowerPoint (`.pptx`) lecture slides and automatically generates **Anki flashcards**, including **text-based cards**, **cloze deletions**, and **image occlusion cards**. The goal is to help **medical students** (like myself) understand material better and save hours every week.
+Convert PowerPoint slides to high-yield Anki flashcards using AI (OpenAI GPT-4o) with advanced semantic processing!
+
+## 🚀 New Features
+
+### **Semantic Processing & AI Enhancement**
+- **Intelligent Content Chunking**: Breaks slides into meaningful semantic units
+- **Slide-Level Embeddings**: Groups similar slides for better context
+- **Duplicate Detection**: Automatically removes similar flashcards
+- **Medical Term Extraction**: Identifies and preserves key medical terminology
+- **Cross-Slide Context**: Uses related slide content for enhanced prompts
+
+### **Enhanced Progress Tracking**
+- **Real-time Progress Bars**: Visual feedback during processing
+- **Detailed Status Updates**: Shows current operation and statistics
+- **Content Analysis**: Displays processing metrics and quality scores
+
+## Features
+- Extracts text and images from PowerPoint slides
+- Uses AI to generate exam-relevant, well-formatted flashcards
+- **Semantic chunking** for optimal content processing
+- **Embedding-based similarity analysis** for better context
+- **Automatic duplicate removal** using semantic similarity
+- Exports to CSV for easy Anki import
+- Gradio web UI for no-code use
+- CLI for advanced users
+
+## Setup
+
+1. **Clone this repository**
+   ```bash
+   git clone https://github.com/vidhidutta/Ankigenerator.git
+   cd Ankigenerator
+   ```
+
+2. **Create and activate a virtual environment**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Add your OpenAI API key** to a `.env` file:
+   ```
+   OPENAI_API_KEY=your_openai_api_key_here
+   ```
+
+## Usage
+
+### Gradio Web UI (Recommended)
+1. Activate your virtual environment:
+   ```bash
+   source venv/bin/activate
+   ```
+
+2. Launch the UI:
+   ```bash
+   python3 gradio_interface.py
+   ```
+
+3. Open the provided link in your browser (e.g., http://localhost:8080)
+
+4. Upload your PowerPoint, configure settings, and generate flashcards!
+
+### Command Line Interface (CLI)
+1. Activate your virtual environment:
+   ```bash
+   source venv/bin/activate
+   ```
+
+2. Run the tool:
+   ```bash
+   python flashcard_generator.py your_presentation.pptx
+   ```
+
+## 🧪 Testing
+
+### Test Semantic Processing
+```bash
+python3 test_semantic.py
+```
+
+### Test Progress Tracking
+```bash
+python3 test_progress.py
+```
+
+### Demo Progress Features
+```bash
+python3 demo_progress.py
+```
+
+## Importing to Anki
+- In Anki, go to **File > Import** and select the generated `generated_flashcards.csv` file.
+- **Important:** When prompted, set the field separator to **comma**.
+- Map the fields to "Front" (Question) and "Back" (Answer).
+
+## Configuration
+
+### Semantic Processing Settings (`config.yaml`)
+```yaml
+semantic_processing:
+  enabled: true
+  chunk_size: 500          # Max characters per chunk
+  overlap: 50              # Character overlap between chunks
+  similarity_threshold: 0.7 # Threshold for grouping similar slides
+  embedding_model: all-MiniLM-L6-v2
+  duplicate_removal: true  # Remove duplicate flashcards
+  duplicate_threshold: 0.8 # Similarity threshold for duplicates
+```
+
+## Requirements
+- Python 3.8+
+- PowerPoint file (.pptx)
+- OpenAI API key
+- Internet connection
+- **New Dependencies:**
+  - sentence-transformers (for embeddings)
+  - scikit-learn (for clustering)
+  - nltk (for text processing)
+
+## Troubleshooting
+- **API key not set:** Make sure your `.env` file contains `OPENAI_API_KEY=your_key`.
+- **No flashcards generated:** Check your internet connection and API key, and ensure your slides contain medical content.
+- **Anki import issues:** Set the field separator to comma during import.
+- **Semantic processing errors:** The system will automatically fall back to basic processing if semantic features fail.
+
+## 🎯 Enhanced Processing Pipeline
+
+1. **Content Extraction**: Extract text and images from slides
+2. **Semantic Chunking**: Break content into meaningful units
+3. **Embedding Analysis**: Compute slide similarities
+4. **Context Enhancement**: Add related slide information
+5. **AI Generation**: Generate flashcards with enhanced prompts
+6. **Duplicate Removal**: Remove similar flashcards
+7. **Quality Analysis**: Provide processing statistics
+
+## License
+MIT License
 
 ---
 
