@@ -16,7 +16,7 @@ from flashcard_generator import (
     generate_enhanced_flashcards_with_progress,
     remove_duplicate_flashcards,
     parse_flashcards,
-    export_flashcards_to_csv,
+    export_flashcards_to_apkg,
     save_text_to_pdf,
     build_extra_materials_prompt,
     call_api_for_extra_materials,
@@ -34,7 +34,8 @@ from flashcard_generator import (
     CLOZE,
     OPENAI_API_KEY,
     Flashcard,
-    QualityController
+    QualityController,
+    tuple_to_dict
 )
 
 def run_flashcard_generation(
@@ -53,16 +54,18 @@ def run_flashcard_generation(
     context_enrichment,
     depth_consistency,
     auto_cloze,
+    content_images,
+    content_notes,
     progress=gr.Progress()
 ):
     """
     Main function to generate flashcards from uploaded PowerPoint file
     """
     if not pptx_file:
-        return "Please upload a PowerPoint file.", "No file uploaded", None, None
+        return "Please upload a PowerPoint file.", "No file uploaded", None, None, None
     
     if not OPENAI_API_KEY:
-        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None
+        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None, None
     
     try:
         progress(0, desc="Starting flashcard generation...")
@@ -74,17 +77,31 @@ def run_flashcard_generation(
             temp_pptx_path = os.path.join(temp_dir, "uploaded_presentation.pptx")
             shutil.copy2(pptx_file.name, temp_pptx_path)
             
-            # Extract text and images
+            # Extract text (and notes)
             progress(0.1, desc="Extracting text from PowerPoint...")
             status_msg = "Extracting text from PowerPoint..."
-            slide_texts = extract_text_from_pptx(temp_pptx_path)
+            slide_data = extract_text_from_pptx(temp_pptx_path)
+            # Prepend notes to slide text if present and if content_notes is True
+            slide_texts = []
+            for entry in slide_data:
+                notes = entry.get('notes_text', '').strip()
+                slide_text = entry.get('slide_text', '').strip()
+                if content_notes and notes:
+                    combined = f"[NOTES]\n{notes}\n[SLIDE]\n{slide_text}" if slide_text else f"[NOTES]\n{notes}"
+                else:
+                    combined = slide_text
+                slide_texts.append(combined)
             
-            progress(0.2, desc="Extracting images from PowerPoint...")
-            status_msg = "Extracting images from PowerPoint..."
-            slide_images = extract_images_from_pptx(temp_pptx_path, os.path.join(temp_dir, "slide_images"))
+            # Extract images if requested
+            if content_images:
+                progress(0.2, desc="Extracting images from PowerPoint...")
+                status_msg = "Extracting images from PowerPoint..."
+                slide_images = extract_images_from_pptx(temp_pptx_path, os.path.join(temp_dir, "slide_images"))
+            else:
+                slide_images = [[] for _ in slide_texts]
             
             if not slide_texts:
-                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None
+                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None, None
             
             # Filter out slides that should be skipped
             progress(0.3, desc="Filtering slides to remove navigation content...")
@@ -139,7 +156,8 @@ def run_flashcard_generation(
                 MODEL_NAME, 
                 MAX_TOKENS, 
                 TEMPERATURE,
-                progress
+                progress,
+                use_cloze=use_cloze
             )
             
             # Handle the new return format (flashcards, analysis_data)
@@ -150,101 +168,31 @@ def run_flashcard_generation(
                 analysis_data = None
             
             if not all_flashcards:
-                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None, None
+                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None, None, None
             
-            # Apply quality control if enabled
-            if quality_control:
-                progress(0.8, desc="Applying quality control...")
-                status_msg = "Applying quality control improvements..."
-                
-                # Import quality control functions
-                try:
-                    from flashcard_generator import QualityController
-                    controller = QualityController()
-                    
-                    # Convert to Flashcard objects for quality control
-                    flashcard_objects = []
-                    for i, (question, answer) in enumerate(all_flashcards):
-                        # Determine level based on flashcard type
-                        level = 1
-                        if flashcard_type == "Level 2":
-                            level = 2
-                        elif flashcard_type == "Both":
-                            # Simple heuristic: if question has reasoning words, it's level 2
-                            reasoning_words = ['why', 'how', 'explain', 'compare', 'interpret', 'pattern', 'suggests']
-                            level = 2 if any(word in question.lower() for word in reasoning_words) else 1
-                        
-                        card = Flashcard(question, answer, level, 1)
-                        flashcard_objects.append(card)
-                    
-                    # Apply quality control steps
-                    if anti_repetition:
-                        duplicates = controller.detect_repetition(flashcard_objects)
-                        duplicate_indices = set()
-                        for i, j in duplicates:
-                            duplicate_indices.add(j)
-                        
-                        original_count = len(flashcard_objects)
-                        flashcard_objects = [card for i, card in enumerate(flashcard_objects) if i not in duplicate_indices]
-                        removed_count = original_count - len(flashcard_objects)
-                        if removed_count > 0:
-                            status_msg = f"Removed {removed_count} duplicate flashcards"
-                    
-                    if conciseness:
-                        expanded_cards = []
-                        for card in flashcard_objects:
-                            if controller.is_too_wordy(card.answer):
-                                split_cards = controller.split_wordy_answer(card.question, card.answer)
-                                for q, a in split_cards:
-                                    new_card = Flashcard(q, a, card.level, card.slide_number)
-                                    expanded_cards.append(new_card)
-                            else:
-                                expanded_cards.append(card)
-                        flashcard_objects = expanded_cards
-                    
-                    if context_enrichment:
-                        for card in flashcard_objects:
-                            if controller.is_shallow_card(card.question, card.answer, card.level):
-                                card.question, card.answer = controller.enrich_shallow_card(
-                                    card.question, card.answer, card.level
-                                )
-                    
-                    if depth_consistency:
-                        for card in flashcard_objects:
-                            card = controller.fix_depth_inconsistency(card)
-                    
-                    if auto_cloze:
-                        for card in flashcard_objects:
-                            is_cloze, cloze_text = controller.detect_cloze_opportunities(card.question, card.answer)
-                            if is_cloze:
-                                card.is_cloze = True
-                                card.cloze_text = cloze_text
-                    
-                    # Convert back to tuples
-                    all_flashcards = [(card.question, card.answer) for card in flashcard_objects]
-                    
-                except Exception as e:
-                    print(f"Warning: Quality control failed: {e}")
-                    print("Continuing with basic processing...")
+            # After quality control, ensure we keep Flashcard objects, not tuples
+            # Remove any conversion to (question, answer) tuples after quality control
+            # Use the Flashcard objects directly for export
+            flashcard_objs_for_export = all_flashcards
+            # Only convert to dicts for display/summary, not for export
+            all_flashcards_dicts = [tuple_to_dict(card, use_cloze=use_cloze) for card in flashcard_objs_for_export]
             
-            # Remove duplicate flashcards (legacy method as backup)
-            progress(0.85, desc="Final duplicate removal...")
-            status_msg = "Final duplicate removal..."
-            original_count = len(all_flashcards)
-            all_flashcards = remove_duplicate_flashcards(all_flashcards)
-            final_count = len(all_flashcards)
-            
-            if original_count != final_count:
-                status_msg = f"Final cleanup: Removed {original_count - final_count} duplicate flashcards"
-            
-            # Export flashcards to CSV
-            progress(0.9, desc="Exporting flashcards to CSV...")
-            status_msg = "Exporting flashcards to CSV..."
-            csv_path = os.path.join(temp_dir, "generated_flashcards.csv")
-            export_flashcards_to_csv(all_flashcards, csv_path)
+            # Export flashcards to APKG using Flashcard objects, not dicts
+            progress(0.9, desc="Exporting flashcards to Anki .apkg...")
+            status_msg = "Exporting flashcards to Anki .apkg..."
+            apkg_path = os.path.join(temp_dir, "generated_flashcards.apkg")
+            print(f"[DEBUG] First 3 card dicts to be exported: {all_flashcards_dicts[:3]}")
+            print(f"[DEBUG] Card types: {[d.get('type') for d in all_flashcards_dicts]}")
+            print(f"[DEBUG] Calling export_flashcards_to_apkg with {len(flashcard_objs_for_export)} cards, output: {apkg_path}")
+            try:
+                export_flashcards_to_apkg(flashcard_objs_for_export, apkg_path)
+                print(f"[DEBUG] export_flashcards_to_apkg completed. File exists: {os.path.exists(apkg_path)}")
+            except Exception as e:
+                print(f"[DEBUG] Error in export_flashcards_to_apkg: {e}")
             
             # Generate extra materials if requested
             extra_materials = ""
+            pdf_path = None
             if any([generate_glossary, generate_topic_map, generate_summary]):
                 progress(0.95, desc="Generating extra materials...")
                 status_msg = "Generating extra materials (glossary, topic map, summary)..."
@@ -285,26 +233,27 @@ def run_flashcard_generation(
                 flashcard_summary += "\n"
             
             flashcard_summary += "Sample flashcards:\n"
-            for i, (question, answer) in enumerate(all_flashcards[:5]):  # Show first 5
-                flashcard_summary += f"\n{i+1}. Q: {question}\n   A: {answer}\n"
+            for i, d in enumerate(all_flashcards_dicts[:5]):  # Show first 5
+                flashcard_summary += f"\n{i+1}. Q: {d['question']}\n   A: {d['answer']}\n"
             
-            if len(all_flashcards) > 5:
-                flashcard_summary += f"\n... and {len(all_flashcards) - 5} more flashcards"
+            if len(all_flashcards_dicts) > 5:
+                flashcard_summary += f"\n... and {len(all_flashcards_dicts) - 5} more flashcards"
             
             # Copy files to accessible location
-            final_csv_path = "generated_flashcards.csv"
+            final_csv_path = None
+            final_apkg_path = "generated_flashcards.apkg"
             final_pdf_path = "lecture_notes.pdf" if extra_materials else None
             
-            shutil.copy2(csv_path, final_csv_path)
-            if extra_materials and os.path.exists(os.path.join(temp_dir, "lecture_notes.pdf")):
-                shutil.copy2(os.path.join(temp_dir, "lecture_notes.pdf"), "lecture_notes.pdf")
+            shutil.copy2(apkg_path, final_apkg_path)
+            if extra_materials and pdf_path and os.path.exists(pdf_path):
+                shutil.copy2(pdf_path, "lecture_notes.pdf")
             
-            final_status = f"✅ Complete! Generated {len(all_flashcards)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
-            return flashcard_summary, final_status, final_csv_path, final_pdf_path
+            final_status = f"✅ Complete! Generated {len(all_flashcards_dicts)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
+            return flashcard_summary, final_status, final_csv_path, final_apkg_path, final_pdf_path
             
     except Exception as e:
         error_msg = f"Error during processing: {str(e)}"
-        return error_msg, f"❌ Error: {str(e)}", None, None
+        return error_msg, f"❌ Error: {str(e)}", None, None, None
 
 # Create the Gradio interface
 def create_interface():
@@ -410,6 +359,26 @@ def create_interface():
                     info="Create a compressed revision version"
                 )
                 
+                gr.Markdown("### 📦 Content Sources")
+                content_text = gr.Checkbox(
+                    label="Text (slide content)",
+                    value=True,
+                    interactive=False,
+                    info="Main slide text is always included"
+                )
+                content_images = gr.Checkbox(
+                    label="Images (tables, graphs, diagrams)",
+                    value=True,
+                    info="Include images, charts, and diagrams from slides"
+                )
+                content_notes = gr.Checkbox(
+                    label="Speaker Notes",
+                    value=True,
+                    info="Include speaker notes if available"
+                )
+                # Optionally, add future toggles here (e.g., audio)
+                # content_audio = gr.Checkbox(label="Audio (future)", value=False, interactive=False)
+                
                 generate_btn = gr.Button(
                     "🚀 Generate Flashcards",
                     variant="primary",
@@ -425,7 +394,8 @@ def create_interface():
                     lines=2
                 )
                 
-                progress_bar = gr.Progress(label="Generation Progress")
+                # Remove label argument for compatibility
+                progress_bar = gr.Progress()
                 
                 flashcard_output = gr.Textbox(
                     label="Generated Flashcards",
@@ -435,13 +405,13 @@ def create_interface():
                 )
                 
                 with gr.Row():
-                    csv_download = gr.File(
-                        label="Download CSV",
-                        visible=False
+                    apkg_download = gr.File(
+                        label="Download Anki .apkg",
+                        visible=True
                     )
                     pdf_download = gr.File(
                         label="Download PDF Notes",
-                        visible=False
+                        visible=True
                     )
         
         # Update the function call to include quality control parameters
@@ -462,12 +432,14 @@ def create_interface():
                 conciseness,
                 context_enrichment,
                 depth_consistency,
-                auto_cloze
+                auto_cloze,
+                content_images,
+                content_notes
             ],
             outputs=[
                 flashcard_output,
                 status_output,
-                csv_download,
+                apkg_download,
                 pdf_download
             ]
         )
@@ -512,7 +484,7 @@ if __name__ == "__main__":
     interface = create_interface()
     interface.launch(
         server_name="0.0.0.0",  # Allow external connections
-        server_port=8080,       # Changed to port 8080
+        server_port=7860,       # Changed to port 7860
         share=True,             # Create a public link
         debug=True
     ) 

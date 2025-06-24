@@ -129,11 +129,20 @@ def test_cloze_opportunities():
     
     controller = QualityController()
     
-    # Test cards that would be good for cloze (like the FEV1/FVC ratio example from analysis)
+    # User's Q/A pairs for cloze detection testing
     cloze_candidates = [
-        ("What is the FEV1/FVC ratio considered normal?", "An FEV1/FVC ratio above 70–80% is considered normal, adjusted for age, gender, and height."),
-        ("What is the significance of hemoglobin's binding affinity for CO compared to O₂?", "Hemoglobin binds to carbon monoxide 200–250 times more strongly than to oxygen."),
-        ("Name the three main types of COPD.", "Emphysema, chronic bronchitis, and small airway disease"),
+        ("What type of genetic disorder is schizophrenia classified as?", "Schizophrenia is classified as a complex polygenic disorder."),
+        ("What is schizophrenia associated with in terms of genetics?", "Schizophrenia is associated with a wide range of mutations scattered across the whole genome, involving over 200 genetic risk loci."),
+        ("What do genome-wide association studies suggest about schizophrenia?", "Genome-wide association studies suggest the involvement of several neurotransmitter systems and possible links to the immune system in schizophrenia."),
+        ("What recent genetic overlap has been identified involving schizophrenia?", "Recent studies show major genetic overlap between schizophrenia, bipolar disorder, and intelligence."),
+        ("What role does BDNF (brain derived neurotrophic factor) play in the brain?", "BDNF is significant in neurogenesis."),
+        ("How is COMT (catechol-O-methyltransferase) linked to schizophrenia?", "COMT is linked to dopaminergic transmission."),
+        ("What is the function of DAOA (D-amino acid oxidase activator) in relation to schizophrenia?", "DAOA is linked to glutamatergic transmission."),
+        ("What role does Neuregulin 1 play in the brain?", "Neuregulin 1 is involved in synaptic plasticity and myelination."),
+        ("How might Dysbindin affect neurotransmission in schizophrenia?", "Dysbindin may affect dopamine D2 receptor levels and glutamate and GABA transmission."),
+        ("What is DISC1 associated with in the context of schizophrenia?", "DISC1 is associated with neurodevelopment and signaling in corticolimbic areas."),
+        ("What is schizophrenia characterized by in terms of its progression?", "Schizophrenia is characterized by significant variability in its evolution among different patients."),
+        ("What characterizes schizophrenia as a syndrome?", "Schizophrenia is a heterogeneous and complex syndrome with various subtypes, distinct clinical manifestations, differing responses to treatment, and diverse illness trajectories."),
     ]
     
     for i, (q, a) in enumerate(cloze_candidates):

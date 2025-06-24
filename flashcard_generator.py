@@ -20,6 +20,33 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 import logging
+import genanki
+
+def tuple_to_dict(card, use_cloze=False):
+    # Accepts a Flashcard object or tuple or dict
+    # Add debug print for first 3 calls
+    if not hasattr(tuple_to_dict, 'call_count'):
+        tuple_to_dict.call_count = 0
+    tuple_to_dict.call_count += 1
+    result = None
+    if isinstance(card, dict):
+        result = card
+    elif hasattr(card, 'is_cloze') and hasattr(card, 'cloze_text'):
+        if getattr(card, 'is_cloze', False) and getattr(card, 'cloze_text', ''):
+            result = {"question": card.cloze_text, "answer": "", "type": "cloze"}
+        else:
+            result = {"question": card.question, "answer": card.answer, "type": "basic"}
+    elif isinstance(card, tuple):
+        q, a = card if len(card) == 2 else (card[0], "")
+        if "{{c" in q:
+            result = {"question": q, "answer": "", "type": "cloze"}
+        else:
+            result = {"question": q, "answer": a, "type": "basic"}
+    else:
+        result = {"question": str(card), "answer": "", "type": "basic"}
+    if tuple_to_dict.call_count <= 3:
+        print(f"[DEBUG][tuple_to_dict] card: {card}, result: {result}")
+    return result
 
 # Import semantic processing
 from semantic_processor import SemanticProcessor
@@ -79,23 +106,33 @@ def parse_args():
     parser.add_argument('pptx_path', help='Path to the PowerPoint (.pptx) file')
     parser.add_argument('--output', default='flashcards.csv', help='Output CSV file for Anki import')
     parser.add_argument('--notes', default='lecture_notes.pdf', help='Output PDF file for extra materials')
+    parser.add_argument('--use_cloze', action='store_true', help='Use cloze cards in generation')
     return parser.parse_args()
 
 
 def extract_text_from_pptx(pptx_path):
-    """Extract text from all slides in a PowerPoint file."""
+    """Extract text and speaker notes from all slides in a PowerPoint file."""
     try:
         prs = Presentation(pptx_path)
-        slide_texts = []
+        slides_data = []
         for i, slide in enumerate(prs.slides):
             slide_content = [f"Slide {i+1}:"]
             for shape in slide.shapes:
                 if hasattr(shape, "text") and shape.text.strip():
                     slide_content.append(shape.text.strip())
-            if len(slide_content) > 1:
-                slide_texts.append("\n".join(slide_content))
-        print(f"Extracted text from {len(slide_texts)} slides")
-        return slide_texts
+            slide_text = "\n".join(slide_content) if len(slide_content) > 1 else ""
+            # Extract speaker notes if present
+            notes_text = ""
+            if hasattr(slide, "notes_slide") and slide.notes_slide:
+                notes_frame = getattr(slide.notes_slide, "notes_text_frame", None)
+                if notes_frame and notes_frame.text:
+                    notes_text = notes_frame.text.strip()
+            slides_data.append({
+                "slide_text": slide_text,
+                "notes_text": notes_text
+            })
+        print(f"Extracted text and notes from {len(slides_data)} slides")
+        return slides_data
     except Exception as e:
         print(f"Error reading PowerPoint file: {e}")
         return []
@@ -178,95 +215,74 @@ def call_api_for_extra_materials(prompt, api_key, model, max_tokens, temperature
         return f"__API_ERROR__{e}"
 
 
-def parse_flashcards(ai_response):
+def parse_flashcards(ai_response, use_cloze=False, slide_number=0, level=1, quality_controller=None):
     flashcards = []
     if ai_response.startswith("__API_ERROR__"):
         return flashcards, ai_response[len("__API_ERROR__"):]
-    
+    if quality_controller is None:
+        from flashcard_generator import QualityController
+        quality_controller = QualityController()
     print(f"DEBUG: Parsing AI response of length {len(ai_response)}")
     print(f"DEBUG: First 200 chars: {ai_response[:200]}")
-    
-    # Pattern 1: Strict format (Question: ... | Answer: ...)
+    # Patterns as before...
     pattern_strict = re.compile(r"Question:\s*(.*?)\s*\|\s*Answer:\s*(.*)")
-    
-    # Pattern 2: Markdown or plain text (Question: ...\nAnswer: ...)
     pattern_qa = re.compile(r"Question:?\s*(.*?)\s*\nAnswer:?\s*(.*?)(?:\n|$)", re.IGNORECASE)
-    
-    # Pattern 3: Markdown bold (**Question:** ...\n**Answer:** ...)
     pattern_md = re.compile(r"\*\*Question:?\*\*\s*(.*?)\s*\n\*\*Answer:?\*\*\s*(.*?)(?:\n|$)", re.IGNORECASE)
-    
-    # Pattern 4: Numbered list format (1. Question: ...\n   Answer: ...)
     pattern_numbered = re.compile(r"\d+\.\s*Question:\s*(.*?)\s*\n\s*Answer:\s*(.*?)(?=\n\d+\.|$)", re.DOTALL | re.IGNORECASE)
-    
-    # Pattern 5: Simple numbered list (1. Question: ...\n   Answer: ...) without "Question:" and "Answer:" labels
     pattern_simple_numbered = re.compile(r"\d+\.\s*(.*?)\s*\n\s*(.*?)(?=\n\d+\.|$)", re.DOTALL)
-    
-    # Pattern 6: Handle the format where everything is on one line with pipe separator
-    # This handles cases like: "Question: What is X? | Answer: Y is Z"
     pattern_oneline = re.compile(r"Question:\s*(.*?)\s*\|\s*Answer:\s*(.*?)(?=\nQuestion:|$)", re.DOTALL)
-
-    # Try strict format first
     matches = list(pattern_strict.finditer(ai_response))
-    print(f"DEBUG: Found {len(matches)} matches with pattern_strict")
     for match in matches:
         question, answer = match.groups()
-        if question.strip() and answer.strip():  # Make sure both fields have content
+        if question.strip() and answer.strip():
             flashcards.append((question.strip(), answer.strip()))
-            print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
-    # If none found, try the oneline format
     if not flashcards:
         matches = list(pattern_oneline.finditer(ai_response))
-        print(f"DEBUG: Found {len(matches)} matches with pattern_oneline")
         for match in matches:
             question, answer = match.groups()
-            if question.strip() and answer.strip():  # Make sure both fields have content
+            if question.strip() and answer.strip():
                 flashcards.append((question.strip(), answer.strip()))
-                print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
-    # If still none, try numbered list format
     if not flashcards:
         matches = list(pattern_numbered.finditer(ai_response))
-        print(f"DEBUG: Found {len(matches)} matches with pattern_numbered")
         for match in matches:
             question, answer = match.groups()
-            if question.strip() and answer.strip():  # Make sure both fields have content
+            if question.strip() and answer.strip():
                 flashcards.append((question.strip(), answer.strip()))
-                print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
-    # If still none, try simple numbered list
     if not flashcards:
         matches = list(pattern_simple_numbered.finditer(ai_response))
-        print(f"DEBUG: Found {len(matches)} matches with pattern_simple_numbered")
         for match in matches:
             question, answer = match.groups()
-            # Filter out obvious non-medical content
             if question.strip() and answer.strip() and is_medical_content(question, answer):
                 flashcards.append((question.strip(), answer.strip()))
-                print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
-    # If still none, try Markdown bold
     if not flashcards:
         matches = list(pattern_md.finditer(ai_response))
-        print(f"DEBUG: Found {len(matches)} matches with pattern_md")
         for match in matches:
             question, answer = match.groups()
             if question.strip() and answer.strip() and is_medical_content(question, answer):
                 flashcards.append((question.strip(), answer.strip()))
-                print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
-    # If still none, try plain Q/A
     if not flashcards:
         matches = list(pattern_qa.finditer(ai_response))
-        print(f"DEBUG: Found {len(matches)} matches with pattern_qa")
         for match in matches:
             question, answer = match.groups()
             if question.strip() and answer.strip() and is_medical_content(question, answer):
                 flashcards.append((question.strip(), answer.strip()))
-                print(f"DEBUG: Added flashcard - Q: {question.strip()[:50]}... A: {answer.strip()[:50]}...")
-    
     print(f"DEBUG: Total flashcards parsed: {len(flashcards)}")
-    return flashcards, None
+    # Convert to Flashcard objects and apply cloze if needed
+    flashcard_objs = []
+    for q, a in flashcards:
+        is_cloze = False
+        cloze_text = ""
+        if use_cloze:
+            is_cloze, cloze_text = quality_controller.detect_cloze_opportunities(q, a)
+        flashcard_objs.append(Flashcard(
+            question=q,
+            answer=a,
+            level=level,
+            slide_number=slide_number,
+            is_cloze=is_cloze and use_cloze,
+            cloze_text=cloze_text if is_cloze and use_cloze else ""
+        ))
+    return flashcard_objs, None
 
 
 def is_medical_content(question, answer):
@@ -381,13 +397,73 @@ def is_medical_content(question, answer):
     return False
 
 
-def export_flashcards_to_csv(flashcards, output_path):
-    import csv
-    with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["Question", "Answer"])
-        for q, a in flashcards:
-            writer.writerow([q, a])
+def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg'):
+    BASIC_MODEL = genanki.Model(
+        1607392319,
+        'Basic (My Generated Deck)',
+        fields=[
+            {'name': 'Question'},
+            {'name': 'Answer'},
+        ],
+        templates=[
+            {
+                'name': 'Card 1',
+                'qfmt': '{{Question}}',
+                'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}',
+            },
+        ],
+    )
+
+    CLOZE_MODEL = genanki.Model(
+        998877661,
+        'Cloze (My Generated Deck)',
+        fields=[
+            {'name': 'Text'},
+        ],
+        templates=[
+            {
+                'name': 'Cloze Card',
+                'qfmt': '{{cloze:Text}}',
+                'afmt': '{{cloze:Text}}',
+            },
+        ],
+        model_type=genanki.Model.CLOZE,
+    )
+
+    deck = genanki.Deck(2059400110, 'My Generated Deck')
+
+    for card in flashcards:
+        # Accept both Flashcard objects and dicts
+        if hasattr(card, 'is_cloze') and hasattr(card, 'cloze_text'):
+            is_cloze = getattr(card, 'is_cloze', False)
+            cloze_text = getattr(card, 'cloze_text', '')
+            question = getattr(card, 'question', '')
+            answer = getattr(card, 'answer', '')
+        elif isinstance(card, dict):
+            is_cloze = card.get('type', 'basic') == 'cloze'
+            cloze_text = card.get('question', '')
+            question = card.get('question', '')
+            answer = card.get('answer', '')
+        else:
+            # fallback: treat as basic
+            is_cloze = False
+            cloze_text = ''
+            question = str(card)
+            answer = ''
+
+        if is_cloze and cloze_text:
+            note = genanki.Note(
+                model=CLOZE_MODEL,
+                fields=[cloze_text],
+            )
+        else:
+            note = genanki.Note(
+                model=BASIC_MODEL,
+                fields=[question, answer],
+            )
+        deck.add_note(note)
+
+    genanki.Package(deck).write_to_file(output_path)
 
 
 def save_text_to_pdf(text, filename):
@@ -549,37 +625,19 @@ def should_skip_slide(slide_text):
 # Enhanced Flashcard Generation with Semantic Processing
 # =====================
 
-def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress=None):
-    """
-    Generate flashcards from semantic chunks with enhanced context
-    
-    Args:
-        semantic_chunks: List of semantic chunk data
-        slide_images: List of image paths for each slide
-        api_key: OpenAI API key
-        model: Model name
-        max_tokens: Max tokens for generation
-        temperature: Temperature for generation
-        progress: Progress callback function
-        
-    Returns:
-        List of generated flashcards
-    """
+def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False):
     api_url = "https://api.openai.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
     all_flashcards = []
     total_chunks = len(semantic_chunks)
-    
+    quality_controller = QualityController()
     for i, chunk_data in enumerate(semantic_chunks):
         if progress:
             progress_percent = 0.4 + (0.45 * (i / total_chunks))
             progress(progress_percent, desc=f"Processing semantic chunk {i+1}/{total_chunks}...")
-        
-        # Build enhanced prompt
         if semantic_processor is not None:
             enhanced_prompt = semantic_processor.build_enhanced_prompt(chunk_data, PROMPT_TEMPLATE)
         else:
@@ -595,13 +653,9 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
                 batch_end=chunk_data.get('slide_index', 0) + 1,
                 batch_text=chunk_data['text']
             )
-        
-        # Prepare content blocks
         content_blocks = [
             {"type": "text", "text": enhanced_prompt}
         ]
-        
-        # Add images from the corresponding slide
         slide_index = chunk_data['slide_index']
         if slide_index < len(slide_images):
             image_paths = slide_images[slide_index]
@@ -616,8 +670,6 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
                         })
                 except Exception as e:
                     print(f"Warning: Could not process image {image_path}: {e}")
-        
-        # Prepare API request
         data = {
             "model": model,
             "messages": [
@@ -626,48 +678,43 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
             "max_tokens": max_tokens,
             "temperature": temperature
         }
-        
         try:
             response = requests.post(api_url, headers=headers, json=data)
             if response.status_code != 200:
                 print(f"Error: Received status code {response.status_code} for chunk {i+1}")
                 print("Response text:", response.text)
                 continue
-            
             try:
                 response_json = response.json()
             except Exception as e:
                 print(f"Error decoding JSON for chunk {i+1}: {e}")
                 print("Raw response:", response.text)
                 continue
-            
             if "choices" not in response_json or not response_json["choices"]:
                 print(f"Error: 'choices' key missing or empty in API response for chunk {i+1}")
                 print("Full response:", response_json)
                 continue
-            
             ai_content = response_json["choices"][0]["message"]["content"]
             print(f"\n--- AI RAW RESPONSE FOR SEMANTIC CHUNK {i+1} ---\n", ai_content, "\n----------------------\n")
-            
-            # Parse flashcards from the response
-            flashcards, _ = parse_flashcards(ai_content)
-            print(f"Generated {len(flashcards)} flashcards from semantic chunk {i+1}")
-            all_flashcards.extend(flashcards)
-            
-            # Update progress with detailed information
+            # Parse flashcards from the response as Flashcard objects
+            flashcard_objs, _ = parse_flashcards(
+                ai_content,
+                use_cloze=use_cloze,
+                slide_number=slide_index,
+                level=1,  # Default to level 1; can be improved if level info is available
+                quality_controller=quality_controller
+            )
+            print(f"Generated {len(flashcard_objs)} flashcards from semantic chunk {i+1}")
+            all_flashcards.extend(flashcard_objs)
             if progress:
                 total_generated = len(all_flashcards)
-                progress(progress_percent, desc=f"Chunk {i+1}/{total_chunks}: Generated {len(flashcards)} cards (Total: {total_generated})")
-            
-            # Small delay to allow UI to update
+                progress(progress_percent, desc=f"Chunk {i+1}/{total_chunks}: Generated {len(flashcard_objs)} cards (Total: {total_generated})")
             time.sleep(0.1)
-            
         except Exception as e:
             print(f"Error generating flashcards for semantic chunk {i+1}: {e}")
-    
     return all_flashcards
 
-def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_key, model, max_tokens, temperature, progress=None):
+def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False):
     """
     Generate flashcards using semantic processing with progress tracking
     
@@ -679,6 +726,7 @@ def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_ke
         max_tokens: Max tokens for generation
         temperature: Temperature for generation
         progress: Progress callback function
+        use_cloze: Boolean indicating whether to use cloze cards
         
     Returns:
         Tuple of (flashcards, analysis_data)
@@ -706,11 +754,15 @@ def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_ke
         print(f"   • Key phrases: {', '.join(analysis_data['key_phrases'][:5])}")
         
         # Step 3: Generate flashcards from semantic chunks
-        flashcards = generate_flashcards_from_semantic_chunks(
-            semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress
+        all_flashcards = generate_flashcards_from_semantic_chunks(
+            semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress, use_cloze
         )
         
-        return flashcards, analysis_data
+        print("\nSample of generated flashcards (before export):")
+        for card in all_flashcards[:10]:
+            print(card)
+        
+        return all_flashcards, analysis_data
         
     except Exception as e:
         print(f"Error in enhanced flashcard generation: {e}")
@@ -776,7 +828,17 @@ def main():
         print(f'Error: PowerPoint file not found: {args.pptx_path}')
         return
     print(f"Processing PowerPoint file: {args.pptx_path}")
-    slide_texts = extract_text_from_pptx(args.pptx_path)
+    slide_data = extract_text_from_pptx(args.pptx_path)
+    # Prepend notes to slide text if present
+    slide_texts = []
+    for entry in slide_data:
+        notes = entry.get('notes_text', '').strip()
+        slide_text = entry.get('slide_text', '').strip()
+        if notes:
+            combined = f"[NOTES]\n{notes}\n[SLIDE]\n{slide_text}" if slide_text else f"[NOTES]\n{notes}"
+        else:
+            combined = slide_text
+        slide_texts.append(combined)
     slide_images = extract_images_from_pptx(args.pptx_path)  # Extract images for each slide
     if not slide_texts:
         print("No text found in PowerPoint file or error occurred during extraction")
@@ -798,13 +860,17 @@ def main():
     
     # Use enhanced flashcard generation with semantic processing
     print("Generating enhanced flashcards with semantic processing...")
+    # Add use_cloze flag from config or CLI if available
+    use_cloze = getattr(args, 'use_cloze', False)
     all_flashcards, analysis_data = generate_enhanced_flashcards_with_progress(
         filtered_slide_texts, 
         filtered_slide_images, 
         OPENAI_API_KEY, 
         MODEL_NAME, 
         MAX_TOKENS, 
-        TEMPERATURE
+        TEMPERATURE,
+        None,
+        use_cloze=use_cloze
     )
     
     if analysis_data:
@@ -813,18 +879,11 @@ def main():
         print(f"   • Content quality score: {analysis_data['unique_key_phrases']} unique medical terms")
         print(f"   • Average chunk size: {analysis_data['avg_chunk_size']:.1f} characters")
     
-    # Remove duplicate flashcards
-    print("Removing duplicate flashcards...")
-    original_count = len(all_flashcards)
-    all_flashcards = remove_duplicate_flashcards(all_flashcards)
-    final_count = len(all_flashcards)
-    
-    if original_count != final_count:
-        print(f"🔄 Removed {original_count - final_count} duplicate flashcards")
-    
+    # Bypass deduplication and tuple conversion for cloze export
     print(f"Total generated: {len(all_flashcards)} flashcards")
-    export_flashcards_to_csv(all_flashcards, args.output)
-    print(f'Success! {len(all_flashcards)} flashcards exported to {args.output}')
+    all_flashcards = [tuple_to_dict(card, use_cloze=use_cloze) for card in all_flashcards]
+    export_flashcards_to_apkg(all_flashcards)
+    print(f'Success! {len(all_flashcards)} flashcards exported to flashcards.apkg')
     print(f'You can now import this file into Anki using File > Import')
 
     # Generate extra materials if requested
@@ -1159,11 +1218,10 @@ class EnhancedFlashcardGenerator:
         # 5. Apply cloze if requested
         if use_cloze:
             for card in expanded_cards:
-                if not card.is_cloze:
-                    is_cloze, cloze_text = self.quality_controller.detect_cloze_opportunities(card.question, card.answer)
-                    if is_cloze:
-                        card.is_cloze = True
-                        card.cloze_text = cloze_text
+                # TEMPORARY: Force all cards to be cloze for testing
+                card.is_cloze = True
+                # Wrap the entire answer as a cloze deletion
+                card.cloze_text = f"{{{{c1::{card.answer}}}}}"
         
         return expanded_cards
     
