@@ -93,7 +93,7 @@ python3 test_progress.py
 ### Demo Progress Features
 ```bash
 python3 demo_progress.py
-```
+   ```
 
 ## Importing to Anki
 - In Anki, go to **File > Import** and select the generated `generated_flashcards.csv` file.

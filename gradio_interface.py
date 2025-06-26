@@ -3,9 +3,20 @@ import yaml
 import os
 import tempfile
 import shutil
-from pathlib import Path
 import sys
 import time
+from PIL import Image, ImageDraw
+
+
+def update_occlusion_image_editor(enable_image_occlusion, occlusion_mode, slide_images):
+    if enable_image_occlusion and occlusion_mode == "Semi-automated (user selects regions)" and slide_images and slide_images[0]:
+        return gr.update(visible=True, value=slide_images[0][0])
+    else:
+        return gr.update(visible=False, value=None)
+
+
+
+
 
 # Import our existing flashcard generator functions
 from flashcard_generator import (
@@ -35,8 +46,16 @@ from flashcard_generator import (
     OPENAI_API_KEY,
     Flashcard,
     QualityController,
-    tuple_to_dict
+    tuple_to_dict,
+    filter_relevant_images_for_occlusion
 )
+
+def create_occlusion(image_path, occlusion_boxes, output_path):
+    img = Image.open(image_path).convert("RGB")
+    draw = ImageDraw.Draw(img)
+    for box in occlusion_boxes:
+        draw.rectangle(box, fill="white")
+    img.save(output_path)
 
 def run_flashcard_generation(
     pptx_file,
@@ -56,16 +75,19 @@ def run_flashcard_generation(
     auto_cloze,
     content_images,
     content_notes,
+    enable_image_occlusion,
+    occlusion_mode,
+    occlusion_image,
     progress=gr.Progress()
 ):
     """
     Main function to generate flashcards from uploaded PowerPoint file
     """
     if not pptx_file:
-        return "Please upload a PowerPoint file.", "No file uploaded", None, None, None
+        return "Please upload a PowerPoint file.", "No file uploaded", None, None
     
     if not OPENAI_API_KEY:
-        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None, None
+        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None
     
     try:
         progress(0, desc="Starting flashcard generation...")
@@ -101,7 +123,7 @@ def run_flashcard_generation(
                 slide_images = [[] for _ in slide_texts]
             
             if not slide_texts:
-                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None, None
+                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None
             
             # Filter out slides that should be skipped
             progress(0.3, desc="Filtering slides to remove navigation content...")
@@ -168,7 +190,7 @@ def run_flashcard_generation(
                 analysis_data = None
             
             if not all_flashcards:
-                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None, None, None
+                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None, None
             
             # After quality control, ensure we keep Flashcard objects, not tuples
             # Remove any conversion to (question, answer) tuples after quality control
@@ -177,15 +199,68 @@ def run_flashcard_generation(
             # Only convert to dicts for display/summary, not for export
             all_flashcards_dicts = [tuple_to_dict(card, use_cloze=use_cloze) for card in flashcard_objs_for_export]
             
-            # Export flashcards to APKG using Flashcard objects, not dicts
+            # If image occlusion is enabled and AI-assisted mode, filter and process relevant images
+            occlusion_flashcards = []
+            if enable_image_occlusion and occlusion_mode == "AI-assisted (AI detects labels/regions)" and filtered_slide_images:
+                progress(0.85, desc="Filtering images for relevance...")
+                status_msg = "Filtering images for relevance..."
+                
+                # Filter images to only include relevant medical/clinical content
+                relevant_images = filter_relevant_images_for_occlusion(
+                    filtered_slide_images, 
+                    filtered_slide_texts, 
+                    OPENAI_API_KEY, 
+                    MODEL_NAME
+                )
+                
+                # Process relevant images for occlusion
+                progress(0.87, desc="Processing relevant images for occlusion...")
+                status_msg = "Processing relevant images for occlusion..."
+                
+                for slide_idx, images in enumerate(relevant_images):
+                    for img_idx, image_path in enumerate(images):
+                        # Create occlusion for this image
+                        occluded_path = os.path.join(temp_dir, f"occluded_slide{slide_idx+1}_img{img_idx+1}.png")
+                        
+                        # For now, create a simple occlusion (in future, this could use OCR to detect text regions)
+                        # This is a placeholder - in a full implementation, you'd use the image_occlusion utilities
+                        try:
+                            img = Image.open(image_path)
+                            # Create a simple occlusion by covering part of the image
+                            occluded_img = img.copy()
+                            draw = ImageDraw.Draw(occluded_img)
+                            # Cover a portion of the image (this is just an example)
+                            width, height = img.size
+                            draw.rectangle([width//4, height//4, 3*width//4, 3*height//4], fill='white')
+                            occluded_img.save(occluded_path)
+                            
+                            occlusion_flashcards.append({
+                                "question_img": occluded_path,
+                                "answer_img": image_path,
+                                "type": "image_occlusion",
+                                "alt_text": f"What is hidden in this medical image from slide {slide_idx + 1}?"
+                            })
+                            
+                            print(f"✅ Created occlusion flashcard for slide {slide_idx + 1}, image {img_idx + 1}")
+                            
+                        except Exception as e:
+                            print(f"⚠️ Error processing image for occlusion: {e}")
+                            continue
+                
+                print(f"✅ Created {len(occlusion_flashcards)} image occlusion flashcards from relevant images")
+            
+            # Combine all flashcards (text and image occlusion)
+            all_cards_for_export = flashcard_objs_for_export + occlusion_flashcards
+            
+            # Export flashcards to APKG using all cards
             progress(0.9, desc="Exporting flashcards to Anki .apkg...")
             status_msg = "Exporting flashcards to Anki .apkg..."
             apkg_path = os.path.join(temp_dir, "generated_flashcards.apkg")
             print(f"[DEBUG] First 3 card dicts to be exported: {all_flashcards_dicts[:3]}")
             print(f"[DEBUG] Card types: {[d.get('type') for d in all_flashcards_dicts]}")
-            print(f"[DEBUG] Calling export_flashcards_to_apkg with {len(flashcard_objs_for_export)} cards, output: {apkg_path}")
+            print(f"[DEBUG] Calling export_flashcards_to_apkg with {len(all_cards_for_export)} cards, output: {apkg_path}")
             try:
-                export_flashcards_to_apkg(flashcard_objs_for_export, apkg_path)
+                export_flashcards_to_apkg(all_cards_for_export, apkg_path)
                 print(f"[DEBUG] export_flashcards_to_apkg completed. File exists: {os.path.exists(apkg_path)}")
             except Exception as e:
                 print(f"[DEBUG] Error in export_flashcards_to_apkg: {e}")
@@ -240,7 +315,6 @@ def run_flashcard_generation(
                 flashcard_summary += f"\n... and {len(all_flashcards_dicts) - 5} more flashcards"
             
             # Copy files to accessible location
-            final_csv_path = None
             final_apkg_path = "generated_flashcards.apkg"
             final_pdf_path = "lecture_notes.pdf" if extra_materials else None
             
@@ -249,11 +323,11 @@ def run_flashcard_generation(
                 shutil.copy2(pdf_path, "lecture_notes.pdf")
             
             final_status = f"✅ Complete! Generated {len(all_flashcards_dicts)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
-            return flashcard_summary, final_status, final_csv_path, final_apkg_path, final_pdf_path
+            return flashcard_summary, final_status, final_apkg_path, final_pdf_path
             
     except Exception as e:
         error_msg = f"Error during processing: {str(e)}"
-        return error_msg, f"❌ Error: {str(e)}", None, None, None
+        return error_msg, f"❌ Error: {str(e)}", None, None
 
 # Create the Gradio interface
 def create_interface():
@@ -338,7 +412,7 @@ def create_interface():
                         label="Auto-Detect Cloze Opportunities",
                         value=True,
                         info="Automatically identify cards suitable for cloze format"
-                    )
+                )
                 
                 gr.Markdown("### 📚 Extra Materials")
                 generate_glossary = gr.Checkbox(
@@ -379,6 +453,25 @@ def create_interface():
                 # Optionally, add future toggles here (e.g., audio)
                 # content_audio = gr.Checkbox(label="Audio (future)", value=False, interactive=False)
                 
+                gr.Markdown("### 🖼️ Image Occlusion")
+                enable_image_occlusion = gr.Checkbox(
+                    label="Enable Image Occlusion Flashcards",
+                    value=False,
+                    info="Generate flashcards by hiding parts of diagrams/images (image occlusion)"
+                )
+                occlusion_mode = gr.Dropdown(
+                    choices=["AI-assisted (AI detects labels/regions)"],
+                    value="AI-assisted (AI detects labels/regions)",
+                    label="Occlusion Mode",
+                    interactive=False,  # Only one option, so not interactive
+                    info="Image occlusion is fully AI-assisted. Manual annotation is currently disabled."
+                )
+                
+                occlusion_image = gr.Image(
+                    label="Occlusion Image (hidden)",
+                    visible=False
+                )
+                
                 generate_btn = gr.Button(
                     "🚀 Generate Flashcards",
                     variant="primary",
@@ -414,6 +507,21 @@ def create_interface():
                         visible=True
                     )
         
+        # Add a state to hold slide_images for dynamic UI
+        slide_images_state = gr.State([])
+
+        # Add a dependency to update the occlusion image when toggles change
+        enable_image_occlusion.change(
+            fn=update_occlusion_image_editor,
+            inputs=[enable_image_occlusion, occlusion_mode, slide_images_state],
+            outputs=occlusion_image
+        )
+        occlusion_mode.change(
+            fn=update_occlusion_image_editor,
+            inputs=[enable_image_occlusion, occlusion_mode, slide_images_state],
+            outputs=occlusion_image
+        )
+
         # Update the function call to include quality control parameters
         generate_btn.click(
             fn=run_flashcard_generation,
@@ -434,7 +542,10 @@ def create_interface():
                 depth_consistency,
                 auto_cloze,
                 content_images,
-                content_notes
+                content_notes,
+                enable_image_occlusion,
+                occlusion_mode,
+                occlusion_image
             ],
             outputs=[
                 flashcard_output,
@@ -471,6 +582,13 @@ def create_interface():
         """)
     
     return interface
+
+# Add a function to update the occlusion image visibility and value
+def update_occlusion_image(enable_image_occlusion, occlusion_mode, slide_images):
+    if enable_image_occlusion and occlusion_mode == "Semi-automated (user selects regions)" and slide_images and slide_images[0]:
+        return gr.update(visible=True, value=slide_images[0][0])
+    else:
+        return gr.update(visible=False, value=None)
 
 if __name__ == "__main__":
     # Check if OpenAI API key is available

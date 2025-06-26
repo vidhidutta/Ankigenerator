@@ -21,13 +21,11 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 import logging
 import genanki
+import urllib.request
+import shutil
 
 def tuple_to_dict(card, use_cloze=False):
     # Accepts a Flashcard object or tuple or dict
-    # Add debug print for first 3 calls
-    if not hasattr(tuple_to_dict, 'call_count'):
-        tuple_to_dict.call_count = 0
-    tuple_to_dict.call_count += 1
     result = None
     if isinstance(card, dict):
         result = card
@@ -44,8 +42,6 @@ def tuple_to_dict(card, use_cloze=False):
             result = {"question": q, "answer": a, "type": "basic"}
     else:
         result = {"question": str(card), "answer": "", "type": "basic"}
-    if tuple_to_dict.call_count <= 3:
-        print(f"[DEBUG][tuple_to_dict] card: {card}, result: {result}")
     return result
 
 # Import semantic processing
@@ -63,8 +59,8 @@ with open('config.yaml', 'r') as f:
 
 PROMPT_TEMPLATE = config.get('prompt_template')
 MODEL_NAME = config.get('model_name', 'gpt-4o')
-MAX_TOKENS = config.get('max_tokens', 300)
-TEMPERATURE = config.get('temperature', 0.7)
+MAX_TOKENS = config.get('max_tokens', 2000)
+TEMPERATURE = config.get('temperature', 0.3)
 
 # User preferences
 CATEGORY = config.get('category', 'Other')
@@ -430,10 +426,48 @@ def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg'):
         model_type=genanki.Model.CLOZE,
     )
 
+    IMAGE_OCCLUSION_MODEL = genanki.Model(
+        1876543210,
+        'Image Occlusion (My Generated Deck)',
+        fields=[
+            {'name': 'OccludedImage'},
+            {'name': 'OriginalImage'},
+            {'name': 'AltText'},
+        ],
+        templates=[
+            {
+                'name': 'Image Occlusion Card',
+                'qfmt': '<div>{{AltText}}</div><img src="{{OccludedImage}}">',
+                'afmt': '<div>{{AltText}}</div><img src="{{OccludedImage}}"><hr id="answer"><img src="{{OriginalImage}}">',
+            },
+        ],
+    )
+
     deck = genanki.Deck(2059400110, 'My Generated Deck')
+    media_files = set()
 
     for card in flashcards:
-        # Accept both Flashcard objects and dicts
+        # Image occlusion card detection
+        is_image_occ = False
+        if isinstance(card, dict):
+            # Accept both possible key formats
+            q_img = card.get('question_img') or card.get('question_image_path')
+            a_img = card.get('answer_img') or card.get('answer_image_path')
+            if q_img and a_img:
+                is_image_occ = True
+                alt_text = card.get('alt_text', 'What is hidden here?')
+                # Copy images to a temp dir if needed, but just use basename for Anki
+                q_img_name = os.path.basename(q_img)
+                a_img_name = os.path.basename(a_img)
+                media_files.add(q_img)
+                media_files.add(a_img)
+                note = genanki.Note(
+                    model=IMAGE_OCCLUSION_MODEL,
+                    fields=[q_img_name, a_img_name, alt_text],
+                )
+                deck.add_note(note)
+                continue
+        # Accept both Flashcard objects and dicts for basic/cloze
         if hasattr(card, 'is_cloze') and hasattr(card, 'cloze_text'):
             is_cloze = getattr(card, 'is_cloze', False)
             cloze_text = getattr(card, 'cloze_text', '')
@@ -463,14 +497,36 @@ def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg'):
             )
         deck.add_note(note)
 
-    genanki.Package(deck).write_to_file(output_path)
+    # Copy media files to a temp dir with only basenames for Anki
+    if media_files:
+        import tempfile
+        temp_media_dir = tempfile.mkdtemp()
+        media_paths = []
+        for f in media_files:
+            if os.path.exists(f):
+                dest = os.path.join(temp_media_dir, os.path.basename(f))
+                if os.path.abspath(f) != os.path.abspath(dest):
+                    shutil.copy2(f, dest)
+                media_paths.append(dest)
+        genanki.Package(deck, media_files=media_paths).write_to_file(output_path)
+        shutil.rmtree(temp_media_dir)
+    else:
+        genanki.Package(deck).write_to_file(output_path)
 
 
 def save_text_to_pdf(text, filename):
+    # Use a Unicode font for full character support
+    font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    font_path = os.path.join(font_dir, "DejaVuSans.ttf")
+    if not os.path.exists(font_path):
+        raise FileNotFoundError(
+            f"DejaVuSans.ttf not found in {font_dir}. Please download it and place it in the fonts/ directory."
+        )
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", size=12)
+    pdf.add_font("DejaVu", "", font_path, uni=True)
+    pdf.set_font("DejaVu", size=12)
     for line in text.split('\n'):
         pdf.cell(0, 10, line, ln=True)
     pdf.output(filename)
@@ -1081,179 +1137,123 @@ class QualityController:
         
         return card
 
-class EnhancedFlashcardGenerator:
-    """Enhanced flashcard generator with quality control"""
+def is_image_relevant_for_occlusion(image_path: str, slide_text: str, api_key: str, model: str) -> bool:
+    """
+    Determine if an image is relevant for image occlusion flashcards.
+    Filters out decorative, scene-setting, or non-medical images.
     
-    def __init__(self, config_path: str = "config.yaml"):
-        self.config = self.load_config(config_path)
-        self.quality_controller = QualityController()
-        self.openai_client = OpenAI(api_key=self.config.get('openai_api_key'))
+    Args:
+        image_path: Path to the image file
+        slide_text: Associated slide text for context
+        api_key: OpenAI API key
+        model: Model name to use for analysis
         
-    def load_config(self, config_path: str) -> Dict:
-        """Load configuration from YAML file"""
-        try:
-            with open(config_path, 'r', encoding='utf-8') as file:
-                return yaml.safe_load(file)
-        except FileNotFoundError:
-            print(f"Config file {config_path} not found. Using default configuration.")
-            return {}
-    
-    def generate_flashcards(self, slide_text: str, slide_number: int, level: int = 1, 
-                          use_cloze: bool = False, progress_callback=None) -> List[Flashcard]:
-        """Generate flashcards with quality control"""
+    Returns:
+        True if the image contains relevant medical/clinical content for occlusion
+    """
+    try:
+        # Read and encode the image
+        with open(image_path, "rb") as image_file:
+            ext = os.path.splitext(image_path)[1][1:]
+            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
         
-        # Generate initial flashcards
-        raw_cards = self._generate_raw_flashcards(slide_text, slide_number, level, use_cloze)
+        # Create the analysis prompt
+        analysis_prompt = f"""
+        Analyze this image and determine if it contains content suitable for medical flashcard creation via image occlusion.
         
-        if progress_callback:
-            progress_callback(0.3, "Generated initial flashcards, applying quality control...")
+        CONTEXT: This image is from a slide with the following text:
+        "{slide_text[:500]}..."  # Truncated for brevity
         
-        # Apply quality control
-        quality_cards = self._apply_quality_control(raw_cards, use_cloze)
+        CRITICAL FILTERING RULES:
+        REJECT the image if it contains:
+        - Decorative elements (logos, decorative graphics, stock photos)
+        - Scene-setting images (hospitals, doctors, patients in general)
+        - Generic medical imagery (stethoscopes, medical symbols)
+        - Navigation elements (arrows, buttons, icons)
+        - Pure text slides (better handled as text flashcards)
+        - Charts/graphs with no medical data
+        - Generic illustrations without specific medical content
         
-        if progress_callback:
-            progress_callback(0.7, "Quality control applied, finalizing cards...")
+        ACCEPT the image if it contains:
+        - Anatomical diagrams with labeled structures
+        - Medical charts/graphs with clinical data
+        - Drug mechanism diagrams
+        - Pathological specimens or histological images
+        - ECG traces, X-rays, or other medical imaging
+        - Flowcharts of medical processes or decision trees
+        - Tables with medical data, lab values, or drug information
+        - Biochemical pathways or molecular diagrams
+        - Clinical algorithms or protocols
         
-        # Final optimization
-        final_cards = self._finalize_cards(quality_cards)
+        Respond with ONLY "RELEVANT" or "NOT_RELEVANT" followed by a brief explanation.
+        """
         
-        if progress_callback:
-            progress_callback(1.0, f"Generated {len(final_cards)} quality-controlled flashcards")
+        # Call the API for analysis
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": analysis_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/{ext};base64,{base64_image}"}
+                        }
+                    ]
+                }
+            ],
+            max_tokens=100,
+            temperature=0.1
+        )
         
-        return final_cards
-    
-    def _generate_raw_flashcards(self, slide_text: str, slide_number: int, level: int, use_cloze: bool) -> List[Flashcard]:
-        """Generate raw flashcards using OpenAI"""
-        prompt = self.config.get('prompt_template', '').format(batch_text=slide_text)
+        result = response.choices[0].message.content.strip().upper()
         
-        try:
-            response = self.openai_client.chat.completions.create(
-                model=self.config.get('model', 'gpt-4o'),
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=2000
-            )
+        # Parse the response
+        if result.startswith("RELEVANT"):
+            print(f"✅ Image {os.path.basename(image_path)} deemed relevant for occlusion")
+            return True
+        else:
+            print(f"❌ Image {os.path.basename(image_path)} filtered out as not relevant")
+            return False
             
-            content = response.choices[0].message.content
-            return self._parse_flashcards(content, slide_number, level, use_cloze)
-            
-        except Exception as e:
-            logging.error(f"Error generating flashcards: {e}")
-            return []
+    except Exception as e:
+        print(f"⚠️ Error analyzing image relevance: {e}")
+        # Default to False if analysis fails
+        return False
+
+
+def filter_relevant_images_for_occlusion(slide_images: List[List[str]], slide_texts: List[str], api_key: str, model: str) -> List[List[str]]:
+    """
+    Filter images to only include those relevant for image occlusion flashcards.
     
-    def _parse_flashcards(self, content: str, slide_number: int, level: int, use_cloze: bool) -> List[Flashcard]:
-        """Parse flashcards from OpenAI response"""
-        cards = []
-        lines = content.split('\n')
+    Args:
+        slide_images: List of image paths for each slide
+        slide_texts: List of slide texts
+        api_key: OpenAI API key
+        model: Model name to use for analysis
         
-        for line in lines:
-            if '|' in line and 'Question:' in line and 'Answer:' in line:
-                parts = line.split('|')
-                if len(parts) >= 2:
-                    question = parts[0].replace('Question:', '').strip()
-                    answer = parts[1].replace('Answer:', '').strip()
-                    
-                    if question and answer:
-                        # Check for cloze opportunities
-                        is_cloze, cloze_text = self.quality_controller.detect_cloze_opportunities(question, answer)
-                        
-                        card = Flashcard(
-                            question=question,
-                            answer=answer,
-                            level=level,
-                            slide_number=slide_number,
-                            is_cloze=is_cloze and use_cloze,
-                            cloze_text=cloze_text if is_cloze and use_cloze else ""
-                        )
-                        cards.append(card)
-        
-        return cards
+    Returns:
+        Filtered list of relevant images for each slide
+    """
+    if not slide_images or not slide_texts:
+        return slide_images
     
-    def _apply_quality_control(self, cards: List[Flashcard], use_cloze: bool) -> List[Flashcard]:
-        """Apply comprehensive quality control"""
-        if not cards:
-            return cards
-        
-        # 1. Remove duplicates
-        duplicates = self.quality_controller.detect_repetition(cards)
-        unique_cards = []
-        duplicate_indices = set()
-        
-        for i, j in duplicates:
-            duplicate_indices.add(j)
-        
-        for i, card in enumerate(cards):
-            if i not in duplicate_indices:
-                unique_cards.append(card)
-        
-        # 2. Fix wordy answers
-        expanded_cards = []
-        for card in unique_cards:
-            if self.quality_controller.is_too_wordy(card.answer):
-                split_cards = self.quality_controller.split_wordy_answer(card.question, card.answer)
-                for q, a in split_cards:
-                    new_card = Flashcard(
-                        question=q,
-                        answer=a,
-                        level=card.level,
-                        slide_number=card.slide_number,
-                        is_cloze=card.is_cloze,
-                        cloze_text=card.cloze_text
-                    )
-                    expanded_cards.append(new_card)
-            else:
-                expanded_cards.append(card)
-        
-        # 3. Fix shallow cards
-        for card in expanded_cards:
-            if self.quality_controller.is_shallow_card(card.question, card.answer, card.level):
-                card.question, card.answer = self.quality_controller.enrich_shallow_card(
-                    card.question, card.answer, card.level
-                )
-        
-        # 4. Fix depth inconsistency
-        for card in expanded_cards:
-            card = self.quality_controller.fix_depth_inconsistency(card)
-        
-        # 5. Apply cloze if requested
-        if use_cloze:
-            for card in expanded_cards:
-                # TEMPORARY: Force all cards to be cloze for testing
-                card.is_cloze = True
-                # Wrap the entire answer as a cloze deletion
-                card.cloze_text = f"{{{{c1::{card.answer}}}}}"
-        
-        return expanded_cards
+    filtered_images = []
     
-    def _finalize_cards(self, cards: List[Flashcard]) -> List[Flashcard]:
-        """Final optimization and validation"""
-        final_cards = []
+    for slide_idx, (images, slide_text) in enumerate(zip(slide_images, slide_texts)):
+        relevant_images = []
         
-        for card in cards:
-            # Final validation
-            if len(card.question.strip()) > 5 and len(card.answer.strip()) > 2:
-                # Calculate confidence based on content quality
-                card.confidence = self._calculate_confidence(card)
-                final_cards.append(card)
+        for image_path in images:
+            if is_image_relevant_for_occlusion(image_path, slide_text, api_key, model):
+                relevant_images.append(image_path)
         
-        return final_cards
+        filtered_images.append(relevant_images)
+        
+        if images and not relevant_images:
+            print(f"📝 Slide {slide_idx + 1}: All {len(images)} images filtered out as not relevant")
+        elif images:
+            print(f"📝 Slide {slide_idx + 1}: {len(relevant_images)}/{len(images)} images deemed relevant")
     
-    def _calculate_confidence(self, card: Flashcard) -> float:
-        """Calculate confidence score for a card"""
-        confidence = 0.5  # Base confidence
-        
-        # Bonus for good question structure
-        if any(word in card.question.lower() for word in ['what', 'why', 'how', 'compare', 'explain']):
-            confidence += 0.2
-        
-        # Bonus for appropriate answer length
-        if 5 <= len(card.answer.split()) <= 20:
-            confidence += 0.2
-        
-        # Bonus for level appropriateness
-        if card.level == 1 and not self.quality_controller.is_too_deep_for_level1(card.question, card.answer):
-            confidence += 0.1
-        elif card.level == 2 and not self.quality_controller.is_too_shallow_for_level2(card.question, card.answer):
-            confidence += 0.1
-        
-        return min(confidence, 1.0) 
+    return filtered_images 
