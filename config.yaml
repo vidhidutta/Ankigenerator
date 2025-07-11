@@ -134,6 +134,9 @@ prompt_template: |
        * Numbers and ratios: "Hemoglobin binds CO {{c1::200-250}} times more strongly than O₂"
        * Key components: "The three types of COPD are {{c1::emphysema}}, {{c2::chronic bronchitis}}, and {{c3::small airway disease}}"
 
+  • When you wrap text in {{cN::…}}, only wrap the specific key phrase. Do not ever wrap the entire sentence or nest cloze markers.
+  • Never nest cloze tags or wrap the entire sentence; wrap each key phrase once only.
+
   5. **CONTEXT ENRICHMENT RULE**:
      - For Level 1: Add minimal context if it helps retention
      - For Level 2: Always include clinical reasoning or application
@@ -218,4 +221,13 @@ prompt_template: |
 
 model_name: gpt-4o
 max_tokens: 2000
-temperature: 0.3 
+temperature: 0.3
+
+conf_threshold: 50
+max_masks_per_image: 6
+min_region_area: 150
+max_region_area_ratio: 0.2
+max_region_width_ratio: 0.7
+max_region_height_ratio: 0.7
+min_text_length: 4
+ignore_nonsemantic_chars: true 

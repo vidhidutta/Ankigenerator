@@ -6,7 +6,16 @@ import shutil
 import sys
 import time
 from PIL import Image, ImageDraw
+from utils.image_occlusion import detect_text_regions, mask_regions, make_qmask, make_omask
+import hashlib
+import logging
 
+# Set up logging to a file
+logging.basicConfig(filename="debug.log", level=logging.DEBUG)
+
+# Load configuration
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 def update_occlusion_image_editor(enable_image_occlusion, occlusion_mode, slide_images):
     if enable_image_occlusion and occlusion_mode == "Semi-automated (user selects regions)" and slide_images and slide_images[0]:
@@ -32,6 +41,7 @@ from flashcard_generator import (
     build_extra_materials_prompt,
     call_api_for_extra_materials,
     stringify_dict,
+    clean_cloze_text,  # NEW: for nicer cloze previews
     PROMPT_TEMPLATE,
     MODEL_NAME,
     MAX_TOKENS,
@@ -46,16 +56,20 @@ from flashcard_generator import (
     OPENAI_API_KEY,
     Flashcard,
     QualityController,
-    tuple_to_dict,
-    filter_relevant_images_for_occlusion
+    filter_relevant_images_for_occlusion,
+    batch_generate_image_occlusion_flashcards
 )
 
 def create_occlusion(image_path, occlusion_boxes, output_path):
     img = Image.open(image_path).convert("RGB")
-    draw = ImageDraw.Draw(img)
-    for box in occlusion_boxes:
-        draw.rectangle(box, fill="white")
-    img.save(output_path)
+    # Instead of white rectangles, generate q/a masks and save individual previews
+    for idx, box in enumerate(occlusion_boxes):
+        # Generate red-box masks
+        q = make_qmask(img, box)
+        o = make_omask(img, box)
+        # Save previews for Gradio to display
+        q.save(os.path.join(output_path, f"qmask_{idx}.png"))
+        o.save(os.path.join(output_path, f"omask_{idx}.png"))
 
 def run_flashcard_generation(
     pptx_file,
@@ -78,6 +92,8 @@ def run_flashcard_generation(
     enable_image_occlusion,
     occlusion_mode,
     occlusion_image,
+    conf_threshold,
+    max_masks_per_image,
     progress=gr.Progress()
 ):
     """
@@ -89,6 +105,9 @@ def run_flashcard_generation(
     if not OPENAI_API_KEY:
         return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None
     
+    # Initialize occluded_path before the try block
+    occluded_path = None
+
     try:
         progress(0, desc="Starting flashcard generation...")
         status_msg = "Starting flashcard generation..."
@@ -119,8 +138,13 @@ def run_flashcard_generation(
                 progress(0.2, desc="Extracting images from PowerPoint...")
                 status_msg = "Extracting images from PowerPoint..."
                 slide_images = extract_images_from_pptx(temp_pptx_path, os.path.join(temp_dir, "slide_images"))
+                print(f"[DEBUG] Extracted image paths: {str(slide_images)[:100]}...")  # Truncate long lists
             else:
                 slide_images = [[] for _ in slide_texts]
+            
+            # Ensure image_paths is correctly set
+            image_paths = [img for slide in slide_images for img in slide]  # Flatten the list of lists
+            print(f"[DEBUG] Flattened image paths: {str(image_paths)[:100]}...")  # Truncate long lists
             
             if not slide_texts:
                 return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None
@@ -128,16 +152,20 @@ def run_flashcard_generation(
             # Filter out slides that should be skipped
             progress(0.3, desc="Filtering slides to remove navigation content...")
             status_msg = "Filtering slides to remove navigation content..."
-            filtered_slide_texts = filter_slides(slide_texts)
-            print(f"Processing {len(filtered_slide_texts)} slides (filtered from {len(slide_texts)} total slides)")
+            filtered_slide_texts, kept_slide_indices = filter_slides(slide_texts, slide_images)
+            print(f"[DEBUG] Slides kept after filtering: {len(filtered_slide_texts)}")
+            filtered_slide_images = [slide_images[i] for i in kept_slide_indices]
+            print(f"[DEBUG] Images kept after filtering: {sum(len(images) for images in filtered_slide_images)}")
+            print(f"[DEBUG] Filtered slide texts: {len(filtered_slide_texts)}, Filtered slide images: {len(filtered_slide_images)}")
+            logging.debug(f"Processing {len(filtered_slide_texts)} slides (filtered from {len(slide_texts)} total slides)")
             
             # Filter slide_images to match filtered_slide_texts
-            kept_slide_indices = []
-            for i, slide_text in enumerate(slide_texts):
-                if not should_skip_slide(slide_text):
-                    kept_slide_indices.append(i)
+            # kept_slide_indices = [] # This line is now redundant as filter_slides handles it
+            # for i, slide_text in enumerate(slide_texts):
+            #     if not should_skip_slide(slide_text):
+            #         kept_slide_indices.append(i)
             
-            filtered_slide_images = [slide_images[i] for i in kept_slide_indices]
+            # filtered_slide_images = [slide_images[i] for i in kept_slide_indices]
             
             # Update configuration based on UI inputs
             current_category = category if category else CATEGORY
@@ -166,7 +194,7 @@ def run_flashcard_generation(
                     "depth_consistency": depth_consistency,
                     "auto_cloze": auto_cloze
                 }
-                print(f"Quality control settings: {quality_settings}")
+                logging.debug(f"Quality control settings: {quality_settings}")
             
             # Generate flashcards with progress tracking
             progress(0.4, desc="Generating flashcards with AI...")
@@ -197,10 +225,29 @@ def run_flashcard_generation(
             # Use the Flashcard objects directly for export
             flashcard_objs_for_export = all_flashcards
             # Only convert to dicts for display/summary, not for export
-            all_flashcards_dicts = [tuple_to_dict(card, use_cloze=use_cloze) for card in flashcard_objs_for_export]
+            # Build concise previews for the UI (skip internal metadata)
+            flashcard_previews = []
+            for card in flashcard_objs_for_export:
+                # Skip image-occlusion placeholders – they cannot be previewed meaningfully
+                if isinstance(card, dict) and card.get("type") == "image_occlusion":
+                    continue  # do not add to preview list
+
+                if hasattr(card, "is_cloze") and getattr(card, "is_cloze", False):
+                    # Prefer the pre-computed preview text; fallback to cleaned cloze text
+                    preview = getattr(card, "preview_text", "") or clean_cloze_text(getattr(card, "cloze_text", ""))
+                    flashcard_previews.append(preview.strip())
+                else:
+                    # Basic Q-A format
+                    q = getattr(card, "question", "")
+                    a = getattr(card, "answer", "")
+                    flashcard_previews.append(f"Q: {q}\nA: {a}")
+
+            # Fallback to stringify_dict for logging/debug, not user display
+            all_flashcards_dicts = [stringify_dict(card, use_cloze=use_cloze) for card in flashcard_objs_for_export]
             
             # If image occlusion is enabled and AI-assisted mode, filter and process relevant images
             occlusion_flashcards = []
+            total_occlusion_flashcards = 0
             if enable_image_occlusion and occlusion_mode == "AI-assisted (AI detects labels/regions)" and filtered_slide_images:
                 progress(0.85, desc="Filtering images for relevance...")
                 status_msg = "Filtering images for relevance..."
@@ -217,54 +264,96 @@ def run_flashcard_generation(
                 progress(0.87, desc="Processing relevant images for occlusion...")
                 status_msg = "Processing relevant images for occlusion..."
                 
+                processed_hashes = set() # Initialize a set to track processed hashes
                 for slide_idx, images in enumerate(relevant_images):
-                    for img_idx, image_path in enumerate(images):
-                        # Create occlusion for this image
-                        occluded_path = os.path.join(temp_dir, f"occluded_slide{slide_idx+1}_img{img_idx+1}.png")
-                        
-                        # For now, create a simple occlusion (in future, this could use OCR to detect text regions)
-                        # This is a placeholder - in a full implementation, you'd use the image_occlusion utilities
+                    logging.debug(f"[DEBUG] Processing slide {slide_idx + 1} with images: {images}")  # Debug statement to verify images being processed
+                    # Initialize placeholder before iterating
+                    image_path = None
+                    for img_idx, img_path in enumerate(images):
+                        image_path = img_path  # Keep for logging context
                         try:
-                            img = Image.open(image_path)
-                            # Create a simple occlusion by covering part of the image
-                            occluded_img = img.copy()
-                            draw = ImageDraw.Draw(occluded_img)
-                            # Cover a portion of the image (this is just an example)
-                            width, height = img.size
-                            draw.rectangle([width//4, height//4, 3*width//4, 3*height//4], fill='white')
-                            occluded_img.save(occluded_path)
+                            img = Image.open(img_path).convert("RGB")
+                            # Create occlusion for this image
+                            occluded_path = os.path.join(temp_dir, f"occluded_slide{slide_idx+1}_img{img_idx+1}.png")
+
+                            # Open and process the image
+                            regions = detect_text_regions(img, conf_threshold=conf_threshold)
+
+                            # Check if regions are empty
+                            if not regions:
+                                logging.debug(f"[DEBUG] No regions detected for image: {img_path}, skipping save.")
+                                continue
+
+                            # Generate a hash of the regions
+                            regions_hash = hashlib.md5(str(regions).encode()).hexdigest()
+
+                            # Check if this hash has already been processed
+                            if regions_hash in processed_hashes:
+                                logging.debug(f"[DEBUG] Duplicate regions detected for image: {img_path}, skipping save.")
+                                continue
+
+                            # Add the hash to the set of processed hashes
+                            processed_hashes.add(regions_hash)
+
+                            # Generate red-box mask layer
+                            qmask_img = make_qmask(img, regions[0])  # assume first region for overlay
+
+                            # Composite mask over the original slide so content shows through
+                            base_rgba = img.convert("RGBA")
+                            q_overlay = Image.alpha_composite(base_rgba, qmask_img)
+
+                            # Save the composited image
+                            q_overlay.save(occluded_path)
+
+                            # Add debug statement for unique saves
+                            logging.debug(f"[DEBUG] Saved occluded image: {occluded_path} with {len(regions)} masks")
                             
+                            # Append in dict format understood by the exporter
                             occlusion_flashcards.append({
-                                "question_img": occluded_path,
-                                "answer_img": image_path,
                                 "type": "image_occlusion",
-                                "alt_text": f"What is hidden in this medical image from slide {slide_idx + 1}?"
+                                "question_image_path": occluded_path,  # masked image (front)
+                                "answer_image_path": img_path          # original image (back)
                             })
-                            
-                            print(f"✅ Created occlusion flashcard for slide {slide_idx + 1}, image {img_idx + 1}")
-                            
+                            total_occlusion_flashcards += 1
+                            logging.debug(f"✅ Created occlusion dict for slide {slide_idx + 1}, image {img_idx + 1}")
                         except Exception as e:
-                            print(f"⚠️ Error processing image for occlusion: {e}")
-                            continue
+                            logging.debug(f"⚠️ Error on {img_path}: {e}")
                 
-                print(f"✅ Created {len(occlusion_flashcards)} image occlusion flashcards from relevant images")
+                logging.debug(f"✅ Created {total_occlusion_flashcards} image occlusion flashcards from relevant images")
             
-            # Combine all flashcards (text and image occlusion)
+            # The per-image append already occurs inside the loop; no extra append here
+
+            # Merge occlusion flashcards with the main list
             all_cards_for_export = flashcard_objs_for_export + occlusion_flashcards
-            
-            # Export flashcards to APKG using all cards
+
+            # Add debug print statement
+            print(f"[DEBUG] Total occlusion flashcards added: {len(occlusion_flashcards)}")
+
+            # --------------------
+            # DE-DUPLICATE CARDS
+            # --------------------
+            seen = set()
+            unique_cards = []
+            for card in all_cards_for_export:
+                if hasattr(card, "question") and isinstance(card.question, str):
+                    key = card.question.strip().lower().rstrip('.?!')
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                unique_cards.append(card)
+            all_cards_for_export = unique_cards
+
+            # Export flashcards to APKG using de-duplicated cards
             progress(0.9, desc="Exporting flashcards to Anki .apkg...")
             status_msg = "Exporting flashcards to Anki .apkg..."
             apkg_path = os.path.join(temp_dir, "generated_flashcards.apkg")
-            print(f"[DEBUG] First 3 card dicts to be exported: {all_flashcards_dicts[:3]}")
-            print(f"[DEBUG] Card types: {[d.get('type') for d in all_flashcards_dicts]}")
-            print(f"[DEBUG] Calling export_flashcards_to_apkg with {len(all_cards_for_export)} cards, output: {apkg_path}")
-            try:
-                export_flashcards_to_apkg(all_cards_for_export, apkg_path)
-                print(f"[DEBUG] export_flashcards_to_apkg completed. File exists: {os.path.exists(apkg_path)}")
-            except Exception as e:
-                print(f"[DEBUG] Error in export_flashcards_to_apkg: {e}")
-            
+            logging.debug(f"[DEBUG] First 3 card dicts to be exported: {all_flashcards_dicts[:3]}")
+            # Filter out any Flashcard-class objects; keep only our image-occlusion dicts
+            from flashcard_generator import export_flashcards_to_apkg
+            logging.debug(f"[DEBUG] Exporting {len(all_cards_for_export)} total cards (text + image occlusion)")
+            export_flashcards_to_apkg(all_cards_for_export, apkg_path, pptx_filename=pptx_file.name)
+            logging.debug(f"[DEBUG] Wrote APKG to: {apkg_path}")
+
             # Generate extra materials if requested
             extra_materials = ""
             pdf_path = None
@@ -308,11 +397,11 @@ def run_flashcard_generation(
                 flashcard_summary += "\n"
             
             flashcard_summary += "Sample flashcards:\n"
-            for i, d in enumerate(all_flashcards_dicts[:5]):  # Show first 5
-                flashcard_summary += f"\n{i+1}. Q: {d['question']}\n   A: {d['answer']}\n"
-            
-            if len(all_flashcards_dicts) > 5:
-                flashcard_summary += f"\n... and {len(all_flashcards_dicts) - 5} more flashcards"
+            for i, preview in enumerate(flashcard_previews[:5]):  # Show first 5 concise previews
+                flashcard_summary += f"\n{i+1}. {preview}\n"
+
+            if len(flashcard_previews) > 5:
+                flashcard_summary += f"\n... and {len(flashcard_previews) - 5} more flashcards"
             
             # Copy files to accessible location
             final_apkg_path = "generated_flashcards.apkg"
@@ -322,7 +411,38 @@ def run_flashcard_generation(
             if extra_materials and pdf_path and os.path.exists(pdf_path):
                 shutil.copy2(pdf_path, "lecture_notes.pdf")
             
-            final_status = f"✅ Complete! Generated {len(all_flashcards_dicts)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
+            final_status = f"✅ Complete! Generated {len(flashcard_previews)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
+            
+            # Call batch_generate_image_occlusion_flashcards with correct image_paths
+            if image_paths:
+                # Load configuration
+                with open('config.yaml', 'r') as file:
+                    config = yaml.safe_load(file)
+                conf_threshold_slider = gr.Slider(
+                    minimum=10,
+                    maximum=100,
+                    value=config['conf_threshold'],
+                    step=1,
+                    label="Confidence Threshold"
+                )
+                max_masks_slider = gr.Slider(
+                    minimum=1,
+                    maximum=10,
+                    value=config['max_masks_per_image'],
+                    step=1,
+                    label="Max Masks per Image"
+                )
+                # Update the call to batch_generate_image_occlusion_flashcards
+                flashcard_entries = batch_generate_image_occlusion_flashcards(
+                    image_paths,
+                    os.path.join(temp_dir, "occlusion_flashcards"),
+                    conf_threshold=conf_threshold,
+                    mask_method='rectangle'
+                )
+                logging.debug(f"[DEBUG] Generated flashcard entries: {flashcard_entries}")  # Debug statement to verify flashcard entries
+            else:
+                logging.debug("[DEBUG] No images found for occlusion flashcards.")
+            
             return flashcard_summary, final_status, final_apkg_path, final_pdf_path
             
     except Exception as e:
@@ -522,7 +642,24 @@ def create_interface():
             outputs=occlusion_image
         )
 
-        # Update the function call to include quality control parameters
+        # Expose sliders in the UI
+        conf_threshold_slider = gr.Slider(
+            minimum=10,
+            maximum=100,
+            value=config['conf_threshold'],
+            step=1,
+            label="Confidence Threshold"
+        )
+
+        max_masks_slider = gr.Slider(
+            minimum=1,
+            maximum=10,
+            value=config['max_masks_per_image'],
+            step=1,
+            label="Max Masks per Image"
+        )
+
+        # Update the function to receive slider values directly
         generate_btn.click(
             fn=run_flashcard_generation,
             inputs=[
@@ -545,7 +682,9 @@ def create_interface():
                 content_notes,
                 enable_image_occlusion,
                 occlusion_mode,
-                occlusion_image
+                occlusion_image,
+                conf_threshold_slider,
+                max_masks_slider
             ],
             outputs=[
                 flashcard_output,
@@ -601,8 +740,8 @@ if __name__ == "__main__":
     # Create and launch the interface
     interface = create_interface()
     interface.launch(
-        server_name="0.0.0.0",  # Allow external connections
-        server_port=7860,       # Changed to port 7860
-        share=True,             # Create a public link
+        server_name="0.0.0.0",
+        server_port=7862,
+        share=True,
         debug=True
     ) 

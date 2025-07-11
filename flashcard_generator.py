@@ -11,7 +11,7 @@ import re
 import time
 from sklearn.metrics.pairwise import cosine_similarity
 import json
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import numpy as np
@@ -23,29 +23,36 @@ import logging
 import genanki
 import urllib.request
 import shutil
+import csv
+from utils.image_occlusion import batch_generate_image_occlusion_flashcards
+from utils.image_occlusion import cleanup_files
+import settings
+from anki_models import IOE_MODEL
 
-def tuple_to_dict(card, use_cloze=False):
-    # Accepts a Flashcard object or tuple or dict
-    result = None
+def summarize_card(card):
     if isinstance(card, dict):
-        result = card
-    elif hasattr(card, 'is_cloze') and hasattr(card, 'cloze_text'):
-        if getattr(card, 'is_cloze', False) and getattr(card, 'cloze_text', ''):
-            result = {"question": card.cloze_text, "answer": "", "type": "cloze"}
-        else:
-            result = {"question": card.question, "answer": card.answer, "type": "basic"}
-    elif isinstance(card, tuple):
-        q, a = card if len(card) == 2 else (card[0], "")
-        if "{{c" in q:
-            result = {"question": q, "answer": "", "type": "cloze"}
-        else:
-            result = {"question": q, "answer": a, "type": "basic"}
+        return f"[Card type: {card.get('type', 'unknown')}]"
     else:
-        result = {"question": str(card), "answer": "", "type": "basic"}
-    return result
+        return f"[Card class: {type(card).__name__}, Question: {getattr(card, 'question', '')[:50]}...]"
 
 # Import semantic processing
 from semantic_processor import SemanticProcessor
+
+# =====================
+# Cloze Utility Helper
+# =====================
+
+
+def clean_cloze_text(text: str) -> str:
+    # 1) Iteratively remove any outer {{cN::…}} wrapper:
+    outer = re.compile(r'^{{c\d+::(.+)}}$')
+    while True:
+        m = outer.match(text)
+        if not m:
+            break
+        text = m.group(1)
+    # 2) Convert all remaining {{cN::…}} to [text]
+    return re.sub(r'{{c\d+::(.*?)}}', r'[\1]', text)
 
 # =====================
 # Configuration Section
@@ -140,6 +147,7 @@ def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
         os.makedirs(output_dir)
     slide_images = []
     for i, slide in enumerate(prs.slides):
+        image_path = None  # Initialize image_path to None
         images_for_slide = []
         for j, shape in enumerate(slide.shapes):
             if shape.shape_type == 13:  # 13 = PICTURE
@@ -151,16 +159,31 @@ def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
                 with open(image_path, "wb") as f:
                     f.write(image_bytes)
                 images_for_slide.append(image_path)
-        slide_images.append(images_for_slide)
+        if image_path is not None:  # Ensure image_path is not None before appending
+            slide_images.append(images_for_slide)
     print(f"Extracted images for {len(slide_images)} slides (some may be empty if no images on slide)")
     return slide_images
 
 
-def stringify_dict(d):
-    """Convert a dictionary of options to a readable string for the prompt."""
-    if not isinstance(d, dict):
-        return str(d)
-    return ', '.join([k.replace('_', ' ').capitalize() for k, v in d.items() if v]) or 'None'
+def stringify_dict(obj: Any, use_cloze: bool = False) -> str:
+    """
+    Convert a dict—or any object with attributes—to a readable string.
+    If use_cloze is True, wraps each value in {{c1::…}} Anki cloze syntax.
+    """
+    # If obj isn't dict-like, fall back to its attributes
+    if not hasattr(obj, "items"):
+        try:
+            obj = obj.__dict__
+        except AttributeError:
+            obj = vars(obj)
+
+    items = []
+    for key, value in obj.items():
+        text = str(value)
+        if use_cloze:
+            text = f"{{{{c1::{text}}}}}"
+        items.append(f"{key}: {text}")
+    return "\n".join(items)
 
 
 def build_extra_materials_prompt(slide_texts, features):
@@ -214,7 +237,8 @@ def call_api_for_extra_materials(prompt, api_key, model, max_tokens, temperature
 def parse_flashcards(ai_response, use_cloze=False, slide_number=0, level=1, quality_controller=None):
     flashcards = []
     if ai_response.startswith("__API_ERROR__"):
-        return flashcards, ai_response[len("__API_ERROR__"):]
+        print(f"⚠️ OpenAI API error: {ai_response[len('__API_ERROR__'):].strip()}")
+        return [], None
     if quality_controller is None:
         from flashcard_generator import QualityController
         quality_controller = QualityController()
@@ -270,13 +294,18 @@ def parse_flashcards(ai_response, use_cloze=False, slide_number=0, level=1, qual
         cloze_text = ""
         if use_cloze:
             is_cloze, cloze_text = quality_controller.detect_cloze_opportunities(q, a)
+            preview_text = clean_cloze_text(cloze_text)
+        else:
+            preview_text = q
         flashcard_objs.append(Flashcard(
             question=q,
             answer=a,
             level=level,
             slide_number=slide_number,
             is_cloze=is_cloze and use_cloze,
-            cloze_text=cloze_text if is_cloze and use_cloze else ""
+            cloze_text=cloze_text if is_cloze and use_cloze else "",
+            preview_text=preview_text,
+            raw_cloze_text=cloze_text  # store raw cloze text
         ))
     return flashcard_objs, None
 
@@ -393,7 +422,19 @@ def is_medical_content(question, answer):
     return False
 
 
-def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg'):
+def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg', pptx_filename=None, config_topic=None):
+    import base64
+    import os
+
+    # Detect topic from filename or config
+    if config_topic:
+        topic = config_topic
+    elif pptx_filename:
+        topic = os.path.splitext(os.path.basename(pptx_filename))[0].replace('_', ' ').replace('-', ' ').title()
+    else:
+        topic = "Lecture"
+
+    # Define Anki note models
     BASIC_MODEL = genanki.Model(
         1607392319,
         'Basic (My Generated Deck)',
@@ -426,92 +467,80 @@ def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg'):
         model_type=genanki.Model.CLOZE,
     )
 
-    IMAGE_OCCLUSION_MODEL = genanki.Model(
-        1876543210,
-        'Image Occlusion (My Generated Deck)',
-        fields=[
-            {'name': 'OccludedImage'},
-            {'name': 'OriginalImage'},
-            {'name': 'AltText'},
-        ],
-        templates=[
-            {
-                'name': 'Image Occlusion Card',
-                'qfmt': '<div>{{AltText}}</div><img src="{{OccludedImage}}">',
-                'afmt': '<div>{{AltText}}</div><img src="{{OccludedImage}}"><hr id="answer"><img src="{{OriginalImage}}">',
-            },
-        ],
-    )
+    # Use a stable but fairly unique deck ID – hash the topic string
+    deck_id = abs(hash(topic)) % 2147483647  # Anki requires 32-bit signed int
+    deck = genanki.Deck(deck_id, topic)
 
-    deck = genanki.Deck(2059400110, 'My Generated Deck')
-    media_files = set()
+    print("[DEBUG] export_flashcards_to_apkg() called")
+    print(f"[DEBUG] Number of flashcards to export: {len(flashcards)}")
+    print(f"[DEBUG] Flashcard types and counts: {[(type(card), card.get('type', 'unknown') if isinstance(card, dict) else 'N/A') for card in flashcards]}")
 
-    for card in flashcards:
-        # Image occlusion card detection
-        is_image_occ = False
-        if isinstance(card, dict):
-            # Accept both possible key formats
-            q_img = card.get('question_img') or card.get('question_image_path')
-            a_img = card.get('answer_img') or card.get('answer_image_path')
-            if q_img and a_img:
-                is_image_occ = True
-                alt_text = card.get('alt_text', 'What is hidden here?')
-                # Copy images to a temp dir if needed, but just use basename for Anki
-                q_img_name = os.path.basename(q_img)
-                a_img_name = os.path.basename(a_img)
-                media_files.add(q_img)
-                media_files.add(a_img)
+    print("\n===== Exporting Flashcards =====")
+    media = []  # Collect image paths for the package
+
+    # Lazy import of Flashcard class to avoid cyclic issues
+    try:
+        from flashcard_generator import Flashcard  # type: ignore
+    except Exception:
+        Flashcard = None  # Fallback – isinstance checks will fail gracefully
+
+    for entry in flashcards:
+        # -----------------------------
+        # IMAGE-OCCLUSION DICT HANDLING
+        # -----------------------------
+        if isinstance(entry, dict):
+            if 'question_image_path' in entry and 'answer_image_path' in entry:
+                qfile = os.path.basename(entry['question_image_path'])
+                afile = os.path.basename(entry['answer_image_path'])
+
+                # Track media files
+                media.extend([entry['question_image_path'], entry['answer_image_path']])
+
                 note = genanki.Note(
-                    model=IMAGE_OCCLUSION_MODEL,
-                    fields=[q_img_name, a_img_name, alt_text],
+                    model=IOE_MODEL,
+                    fields=[f"<img src='{qfile}'>", f"<img src='{afile}'>"],
                 )
                 deck.add_note(note)
-                continue
-        # Accept both Flashcard objects and dicts for basic/cloze
-        if hasattr(card, 'is_cloze') and hasattr(card, 'cloze_text'):
-            is_cloze = getattr(card, 'is_cloze', False)
-            cloze_text = getattr(card, 'cloze_text', '')
-            question = getattr(card, 'question', '')
-            answer = getattr(card, 'answer', '')
-        elif isinstance(card, dict):
-            is_cloze = card.get('type', 'basic') == 'cloze'
-            cloze_text = card.get('question', '')
-            question = card.get('question', '')
-            answer = card.get('answer', '')
-        else:
-            # fallback: treat as basic
-            is_cloze = False
-            cloze_text = ''
-            question = str(card)
-            answer = ''
+            else:
+                print(f"[WARN] Skipping dict entry missing expected keys: {entry}")
+            continue
 
-        if is_cloze and cloze_text:
-            note = genanki.Note(
-                model=CLOZE_MODEL,
-                fields=[cloze_text],
-            )
-        else:
-            note = genanki.Note(
-                model=BASIC_MODEL,
-                fields=[question, answer],
-            )
-        deck.add_note(note)
+        # -----------------------------
+        # TEXT FLASHCARD OBJECTS
+        # -----------------------------
+        if Flashcard is not None and isinstance(entry, Flashcard):
+            if getattr(entry, 'is_cloze', False):
+                text_field = entry.cloze_text or f"{entry.question} – {entry.answer}"
+                note = genanki.Note(model=CLOZE_MODEL, fields=[text_field])
+            else:
+                note = genanki.Note(model=BASIC_MODEL, fields=[entry.question, entry.answer])
 
-    # Copy media files to a temp dir with only basenames for Anki
-    if media_files:
-        import tempfile
-        temp_media_dir = tempfile.mkdtemp()
-        media_paths = []
-        for f in media_files:
-            if os.path.exists(f):
-                dest = os.path.join(temp_media_dir, os.path.basename(f))
-                if os.path.abspath(f) != os.path.abspath(dest):
-                    shutil.copy2(f, dest)
-                media_paths.append(dest)
-        genanki.Package(deck, media_files=media_paths).write_to_file(output_path)
-        shutil.rmtree(temp_media_dir)
-    else:
-        genanki.Package(deck).write_to_file(output_path)
+            # If the Flashcard references an image_path, ensure it gets packaged
+            img_path = getattr(entry, 'image_path', None)
+            if img_path and os.path.exists(img_path):
+                fname = os.path.basename(img_path)
+                media.append(img_path)
+                # If this note has an Answer field (Basic model), append the image there
+                if len(note.fields) >= 2:
+                    note.fields[1] += f"<br><img src='{fname}'>"
+            deck.add_note(note)
+            continue
+
+        # -----------------------------
+        # UNKNOWN ENTRY TYPE
+        # -----------------------------
+        print(f"[WARN] Unrecognized flashcard entry – skipped: {entry}")
+
+    files_to_cleanup: list[str] = []
+    try:
+        genanki.Package(deck, media_files=media).write_to_file(output_path)
+    except Exception:
+        cleanup_files(files_to_cleanup)
+        raise
+    print("[DEBUG] Finished adding flashcards, writing to file...")
+    print(f"[DEBUG] Successfully wrote APKG file to: {output_path}")
+    print(f"[SUCCESS] APKG exported to {output_path}")
+
 
 
 def save_text_to_pdf(text, filename):
@@ -533,87 +562,75 @@ def save_text_to_pdf(text, filename):
 
 
 def generate_multimodal_flashcards_http(slide_texts, slide_images, api_key, model, max_tokens, temperature):
+    import os, base64
     api_url = "https://api.openai.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     all_flashcards = []
-    for i, (slide_text, image_paths) in enumerate(zip(slide_texts, slide_images)):
-        content_blocks = [
-            {"type": "text", "text": PROMPT_TEMPLATE.format(
-                category=CATEGORY,
-                exam=EXAM,
-                organisation=stringify_dict(ORGANISATION),
-                features=stringify_dict(FEATURES),
-                flashcard_type=stringify_dict(FLASHCARD_TYPE),
-                answer_format=ANSWER_FORMAT,
-                cloze=CLOZE,
-                batch_start=i+1,
-                batch_end=i+1,
-                batch_text=slide_text
-            )},
-            {"type": "text", "text": slide_text}
-        ]
-        for image_path in image_paths:
-            with open(image_path, "rb") as image_file:
-                ext = os.path.splitext(image_path)[1][1:]  # e.g., 'png', 'jpg'
-                base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+    for slide_index in range(len(slide_images)):
+        # Per-slide initializations
+        image_paths = slide_images[slide_index] if slide_index < len(slide_images) else []
+        last_img_path = None
+        question = ""
+        answer = ""
+        level = 1
+        is_cloze = False
+        cloze_text = ""
+        content_blocks = [{"type": "text", "text": slide_texts[slide_index]}]
+
+        # Embed each image and remember only the last path
+        for img_path in image_paths:
+            last_img_path = img_path
+            try:
+                with open(img_path, "rb") as f:
+                    ext = os.path.splitext(img_path)[1][1:]
+                    b64 = base64.b64encode(f.read()).decode("utf-8")
                 content_blocks.append({
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/{ext};base64,{base64_image}"}
+                    "image_url": {"url": f"data:image/{ext};base64,{b64}"}
                 })
-        data = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": content_blocks}
-            ],
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
-        try:
-            response = requests.post(api_url, headers=headers, json=data)
-            if response.status_code != 200:
-                print(f"Error: Received status code {response.status_code} for slide {i+1}")
-                print("Response text:", response.text)
-                continue
-            try:
-                response_json = response.json()
             except Exception as e:
-                print(f"Error decoding JSON for slide {i+1}: {e}")
-                print("Raw response:", response.text)
-                continue
-            if "choices" not in response_json or not response_json["choices"]:
-                print(f"Error: 'choices' key missing or empty in API response for slide {i+1}")
-                print("Full response:", response_json)
-                continue
-            ai_content = response_json["choices"][0]["message"]["content"]
-            print(f"\n--- AI RAW RESPONSE FOR SLIDE {i+1} ---\n", ai_content, "\n----------------------\n")
-            # Parse flashcards from the response
-            flashcards, _ = parse_flashcards(ai_content)
-            print(f"Generated {len(flashcards)} flashcards from slide {i+1}")
-            all_flashcards.extend(flashcards)
-        except Exception as e:
-            print(f"Error generating flashcards for slide {i+1}: {e}")
+                print(f"Warning: Could not process image {img_path}: {e}")
+
+        # Build a single Flashcard per slide, using last_img_path (or None)
+        flashcard = Flashcard(
+            question=question,
+            answer=answer,
+            level=level,
+            slide_number=slide_index,
+            is_cloze=is_cloze,
+            cloze_text=cloze_text,
+            image_path=last_img_path
+        )
+        all_flashcards.append(flashcard)
+
     return all_flashcards
 
 
-def filter_slides(slide_texts):
+
+
+def filter_slides(slide_texts, slide_images):
     """
     Filter out slides that are likely to be empty or contain only navigation content.
-    Returns a list of slide texts that should be processed.
+    Returns a list of slide texts that should be processed and their indices.
     """
     filtered_slides = []
-    for i, slide_text in enumerate(slide_texts):
+    kept_indices = []
+    for i, (slide_text, images) in enumerate(zip(slide_texts, slide_images)):
         # Skip slides that are likely to be empty or navigation
-        if should_skip_slide(slide_text):
-            print(f"Skipping slide {i+1} (likely empty or navigation content)")
+        if should_skip_slide(slide_text, images):
+            print(f"[DEBUG] Skipping slide {i+1}: no text, no images")
             continue
+        print(f"[DEBUG] Keeping slide {i+1}: has text or images")
         filtered_slides.append(slide_text)
-    return filtered_slides
+        kept_indices.append(i)
+    return filtered_slides, kept_indices
 
 
-def should_skip_slide(slide_text):
+def should_skip_slide(slide_text, images):
     """
     Determine if a slide should be skipped based on its content.
     Returns True if the slide should be skipped.
@@ -668,11 +685,11 @@ def should_skip_slide(slide_text):
         if re.search(pattern, text_lower):
             return True
     
-    # If slide has very little content (less than 50 characters excluding "Slide X:")
+    # If slide has very little content (less than 50 characters excluding "Slide X:") and no images
     slide_match = re.match(r"^slide \d+:", slide_text)
     slide_header_length = len(slide_match.group(0)) if slide_match else 0
     content_length = len(slide_text) - slide_header_length
-    if content_length < 50:
+    if content_length < 50 and not images:
         return True
     
     return False
@@ -691,6 +708,8 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
     total_chunks = len(semantic_chunks)
     quality_controller = QualityController()
     for i, chunk_data in enumerate(semantic_chunks):
+        image_paths = []
+        last_img_path = None  # Track last image path for this chunk
         if progress:
             progress_percent = 0.4 + (0.45 * (i / total_chunks))
             progress(progress_percent, desc=f"Processing semantic chunk {i+1}/{total_chunks}...")
@@ -713,19 +732,20 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
             {"type": "text", "text": enhanced_prompt}
         ]
         slide_index = chunk_data['slide_index']
-        if slide_index < len(slide_images):
+        if 0 <= slide_index < len(slide_images):
             image_paths = slide_images[slide_index]
-            for image_path in image_paths:
+            for img_path in image_paths:
+                last_img_path = img_path
                 try:
-                    with open(image_path, "rb") as image_file:
-                        ext = os.path.splitext(image_path)[1][1:]
+                    with open(img_path, "rb") as image_file:
+                        ext = os.path.splitext(img_path)[1][1:]
                         base64_image = base64.b64encode(image_file.read()).decode("utf-8")
                         content_blocks.append({
                             "type": "image_url",
                             "image_url": {"url": f"data:image/{ext};base64,{base64_image}"}
                         })
                 except Exception as e:
-                    print(f"Warning: Could not process image {image_path}: {e}")
+                    print(f"Warning: could not read {img_path}: {e}")
         data = {
             "model": model,
             "messages": [
@@ -760,6 +780,9 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
                 level=1,  # Default to level 1; can be improved if level info is available
                 quality_controller=quality_controller
             )
+            # Attach image_path information to each generated Flashcard
+            for fc in flashcard_objs:
+                fc.image_path = last_img_path
             print(f"Generated {len(flashcard_objs)} flashcards from semantic chunk {i+1}")
             all_flashcards.extend(flashcard_objs)
             if progress:
@@ -816,7 +839,8 @@ def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_ke
         
         print("\nSample of generated flashcards (before export):")
         for card in all_flashcards[:10]:
-            print(card)
+            print(summarize_card(card))
+
         
         return all_flashcards, analysis_data
         
@@ -872,91 +896,35 @@ def remove_duplicate_flashcards(flashcards, similarity_threshold=0.8):
         return flashcards
 
 # =====================
+# Test Deck Creation
+# =====================
+
+def create_test_apkg_deck(output_path='test_deck.apkg'):
+    # Sample flashcards with image occlusion
+    sample_flashcards = [
+        {
+            'type': 'image_occlusion',
+            'question_img': 'apkg_media_check/occluded_slide10_img1.png',
+            'answer_img': 'apkg_media_check/slide11_img1.jpg',
+        },
+        {
+            'type': 'image_occlusion',
+            'question_img': 'apkg_media_check/occluded_slide13_img1.png',
+            'answer_img': 'apkg_media_check/slide12_img2.png',
+        },
+    ]
+    
+    # Export the sample flashcards to an APKG file
+    export_flashcards_to_apkg(sample_flashcards, output_path=output_path)
+    print(f"Test deck created at {output_path}")
+
+# =====================
 # Main Orchestration
 # =====================
 
-def main():
-    args = parse_args()
-    if not OPENAI_API_KEY:
-        print('Error: OPENAI_API_KEY not set in .env file')
-        return
-    if not os.path.exists(args.pptx_path):
-        print(f'Error: PowerPoint file not found: {args.pptx_path}')
-        return
-    print(f"Processing PowerPoint file: {args.pptx_path}")
-    slide_data = extract_text_from_pptx(args.pptx_path)
-    # Prepend notes to slide text if present
-    slide_texts = []
-    for entry in slide_data:
-        notes = entry.get('notes_text', '').strip()
-        slide_text = entry.get('slide_text', '').strip()
-        if notes:
-            combined = f"[NOTES]\n{notes}\n[SLIDE]\n{slide_text}" if slide_text else f"[NOTES]\n{notes}"
-        else:
-            combined = slide_text
-        slide_texts.append(combined)
-    slide_images = extract_images_from_pptx(args.pptx_path)  # Extract images for each slide
-    if not slide_texts:
-        print("No text found in PowerPoint file or error occurred during extraction")
-        return
-    
-    # Filter out slides that should be skipped
-    print("Filtering slides to remove navigation and empty content...")
-    filtered_slide_texts = filter_slides(slide_texts)
-    print(f"Processing {len(filtered_slide_texts)} slides (filtered from {len(slide_texts)} total slides)")
-    
-    # Filter slide_images to match filtered_slide_texts
-    # We need to keep track of which slides were kept
-    kept_slide_indices = []
-    for i, slide_text in enumerate(slide_texts):
-        if not should_skip_slide(slide_text):
-            kept_slide_indices.append(i)
-    
-    filtered_slide_images = [slide_images[i] for i in kept_slide_indices]
-    
-    # Use enhanced flashcard generation with semantic processing
-    print("Generating enhanced flashcards with semantic processing...")
-    # Add use_cloze flag from config or CLI if available
-    use_cloze = getattr(args, 'use_cloze', False)
-    all_flashcards, analysis_data = generate_enhanced_flashcards_with_progress(
-        filtered_slide_texts, 
-        filtered_slide_images, 
-        OPENAI_API_KEY, 
-        MODEL_NAME, 
-        MAX_TOKENS, 
-        TEMPERATURE,
-        None,
-        use_cloze=use_cloze
-    )
-    
-    if analysis_data:
-        print(f"\n📊 Enhanced Processing Results:")
-        print(f"   • Semantic chunks created: {analysis_data['total_chunks']}")
-        print(f"   • Content quality score: {analysis_data['unique_key_phrases']} unique medical terms")
-        print(f"   • Average chunk size: {analysis_data['avg_chunk_size']:.1f} characters")
-    
-    # Bypass deduplication and tuple conversion for cloze export
-    print(f"Total generated: {len(all_flashcards)} flashcards")
-    all_flashcards = [tuple_to_dict(card, use_cloze=use_cloze) for card in all_flashcards]
-    export_flashcards_to_apkg(all_flashcards)
-    print(f'Success! {len(all_flashcards)} flashcards exported to flashcards.apkg')
-    print(f'You can now import this file into Anki using File > Import')
-
-    # Generate extra materials if requested
-    extra_prompt = build_extra_materials_prompt(filtered_slide_texts, FEATURES)
-    if extra_prompt:
-        print("Generating extra materials (glossary, index, etc.) with AI...")
-        extra_response = call_api_for_extra_materials(extra_prompt, OPENAI_API_KEY, MODEL_NAME, 1000, TEMPERATURE)
-        if extra_response.startswith("__API_ERROR__"):
-            print("Error generating extra materials:", extra_response)
-        else:
-            save_text_to_pdf(extra_response, args.notes)
-            print(f'Success! Extra materials exported to {args.notes}')
-    else:
-        print("No extra materials requested by user preferences.")
-
-if __name__ == '__main__':
-    main() 
+if __name__ == "__main__":
+    # Directly create a test APKG deck
+    create_test_apkg_deck()
 
 # =====================
 # Quality Control Classes
@@ -971,6 +939,10 @@ class Flashcard:
     confidence: float = 0.0
     is_cloze: bool = False
     cloze_text: str = ""
+    image_path: Optional[str] = None  # Path to last related image (if any)
+    preview_text: str = ""  # Cleaned cloze text for UI preview
+    raw_cloze_text: str = ""  # Original cloze text as received or generated
+    card_type: str = ""  # e.g., 'occlusion' for masked image cards
 
 class QualityController:
     """Handles flashcard quality control and optimization"""
@@ -1256,4 +1228,31 @@ def filter_relevant_images_for_occlusion(slide_images: List[List[str]], slide_te
         elif images:
             print(f"📝 Slide {slide_idx + 1}: {len(relevant_images)}/{len(images)} images deemed relevant")
     
-    return filtered_images 
+    return filtered_images
+
+def export_occlusion_flashcards_to_csv(flashcard_entries, csv_path):
+    """
+    Export a list of occlusion flashcard entries to a CSV file for Anki import.
+    Each entry should have 'question_image_base64' and 'answer_image_base64'.
+    """
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Front", "Back"])
+        for entry in flashcard_entries:
+            front = f"<img src='{os.path.basename(entry['question_image_path'])}'>"
+            back  = f"<img src='{os.path.basename(entry['answer_image_path'])}'>"
+            writer.writerow([front, back])
+
+# Example usage of batch_generate_image_occlusion_flashcards
+# image_paths = ['path/to/image1.png', 'path/to/image2.png']  # Replace with actual image paths
+# export_dir = 'path/to/export_dir'  # Replace with actual export directory
+# flashcard_entries = batch_generate_image_occlusion_flashcards(image_paths, export_dir)
+
+# Process flashcard_entries as needed
+# for entry in flashcard_entries:
+#     print(f"Generated flashcard entry: {entry}")
+
+# Use config values in batch_generate_image_occlusion_flashcards
+# batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_threshold=config['conf_threshold'], mask_method='rectangle')
+
+# batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_threshold=config['conf_threshold'], mask_method='rectangle') 
