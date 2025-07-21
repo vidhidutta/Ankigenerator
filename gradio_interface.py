@@ -17,11 +17,7 @@ logging.basicConfig(filename="debug.log", level=logging.DEBUG)
 with open('config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
-def update_occlusion_image_editor(enable_image_occlusion, occlusion_mode, slide_images):
-    if enable_image_occlusion and occlusion_mode == "Semi-automated (user selects regions)" and slide_images and slide_images[0]:
-        return gr.update(visible=True, value=slide_images[0][0])
-    else:
-        return gr.update(visible=False, value=None)
+
 
 
 
@@ -37,9 +33,6 @@ from flashcard_generator import (
     remove_duplicate_flashcards,
     parse_flashcards,
     export_flashcards_to_apkg,
-    save_text_to_pdf,
-    build_extra_materials_prompt,
-    call_api_for_extra_materials,
     stringify_dict,
     clean_cloze_text,  # NEW: for nicer cloze previews
     PROMPT_TEMPLATE,
@@ -73,20 +66,10 @@ def create_occlusion(image_path, occlusion_boxes, output_path):
 
 def run_flashcard_generation(
     pptx_file,
-    category,
-    exam,
-    flashcard_type,
-    answer_format,
+    flashcard_level,
+    question_style,
     use_cloze,
-    generate_glossary,
-    generate_topic_map,
-    generate_summary,
-    quality_control,
-    anti_repetition,
-    conciseness,
-    context_enrichment,
-    depth_consistency,
-    auto_cloze,
+    # Removed parameters related to extra materials
     content_images,
     content_notes,
     enable_image_occlusion,
@@ -94,16 +77,17 @@ def run_flashcard_generation(
     occlusion_image,
     conf_threshold,
     max_masks_per_image,
-    progress=gr.Progress()
+    progress=gr.Progress(),
+    card_types=None  # New parameter to handle multiple card types (list of selected card types)
 ):
     """
     Main function to generate flashcards from uploaded PowerPoint file
     """
     if not pptx_file:
-        return "Please upload a PowerPoint file.", "No file uploaded", None, None
+        return "Please upload a PowerPoint file.", "No file uploaded", None
     
     if not OPENAI_API_KEY:
-        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None, None
+        return "Error: OPENAI_API_KEY not set. Please check your .env file.", "API key not found", None
     
     # Initialize occluded_path before the try block
     occluded_path = None
@@ -147,7 +131,7 @@ def run_flashcard_generation(
             print(f"[DEBUG] Flattened image paths: {str(image_paths)[:100]}...")  # Truncate long lists
             
             if not slide_texts:
-                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None, None
+                return "Error: No text found in PowerPoint file or error occurred during extraction.", "No text found", None
             
             # Filter out slides that should be skipped
             progress(0.3, desc="Filtering slides to remove navigation content...")
@@ -168,57 +152,94 @@ def run_flashcard_generation(
             # filtered_slide_images = [slide_images[i] for i in kept_slide_indices]
             
             # Update configuration based on UI inputs
-            current_category = category if category else CATEGORY
-            current_exam = exam if exam else EXAM
-            current_flashcard_type = {"level_1": flashcard_type == "Level 1", "level_2": flashcard_type == "Level 2", "both": flashcard_type == "Both"}
-            current_answer_format = answer_format if answer_format else ANSWER_FORMAT
+            # If only Image Occlusion is selected, ignore flashcard level since image occlusion doesn't use levels
+            if card_types and len(card_types) == 1 and "Image Occlusion" in card_types:
+                # For image occlusion only, use a neutral level setting
+                current_flashcard_type = {"level_1": False, "level_2": False, "both": True}
+            else:
+                # For text-based cards, use the selected level
+                current_flashcard_type = {"level_1": flashcard_level == "Level 1", "level_2": flashcard_level == "Level 2", "both": flashcard_level == "Both"}
+            current_question_style = question_style if question_style else "Word for word"
             current_cloze = "yes" if use_cloze else "no"
-            current_features = {
-                "topic_map": generate_topic_map,
-                "glossary": generate_glossary,
-                "summary_review_sheet": generate_summary,
-                "index": False,
-                "none": False
-            }
+            # Extra materials support removed
+            current_features = {"index": False, "none": False}
             
-            # Apply quality control settings
-            if quality_control:
-                progress(0.35, desc="Applying quality control settings...")
-                status_msg = "Applying quality control settings..."
-                
-                # Update configuration with quality control settings
-                quality_settings = {
-                    "anti_repetition": anti_repetition,
-                    "conciseness": conciseness,
-                    "context_enrichment": context_enrichment,
-                    "depth_consistency": depth_consistency,
-                    "auto_cloze": auto_cloze
-                }
-                logging.debug(f"Quality control settings: {quality_settings}")
+            # Quality control is always enabled
+            progress(0.35, desc="Applying quality control settings...")
+            status_msg = "Applying quality control settings..."
+            
+            # Quality control settings are always on
+            quality_settings = {
+                "anti_repetition": True,
+                "conciseness": True,
+                "context_enrichment": True,
+                "depth_consistency": True,
+                "auto_cloze": True
+            }
+            logging.debug(f"Quality control settings: {quality_settings}")
             
             # Generate flashcards with progress tracking
             progress(0.4, desc="Generating flashcards with AI...")
             status_msg = f"Generating flashcards with AI for {len(filtered_slide_texts)} slides..."
-            result = generate_enhanced_flashcards_with_progress(
-                filtered_slide_texts, 
-                filtered_slide_images, 
-                OPENAI_API_KEY, 
-                MODEL_NAME, 
-                MAX_TOKENS, 
-                TEMPERATURE,
-                progress,
-                use_cloze=use_cloze
-            )
             
-            # Handle the new return format (flashcards, analysis_data)
-            if isinstance(result, tuple):
-                all_flashcards, analysis_data = result
+            # Handle multiple card types
+            all_flashcards = []
+            
+            # Check if only Image Occlusion is selected
+            only_image_occlusion = card_types and len(card_types) == 1 and "Image Occlusion" in card_types
+            
+            # Generate Basic cards if selected (skip if only image occlusion)
+            if not only_image_occlusion and (card_types is None or "Basic" in card_types):
+                basic_result = generate_enhanced_flashcards_with_progress(
+                    filtered_slide_texts, 
+                    filtered_slide_images, 
+                    OPENAI_API_KEY, 
+                    MODEL_NAME, 
+                    MAX_TOKENS, 
+                    TEMPERATURE,
+                    progress,
+                    use_cloze=False,  # Basic cards are not cloze
+                    question_style=current_question_style
+                )
+                
+                if isinstance(basic_result, tuple):
+                    basic_flashcards, _ = basic_result
+                else:
+                    basic_flashcards = basic_result
+                
+                all_flashcards.extend(basic_flashcards)
+            
+            # Generate Cloze cards if selected (skip if only image occlusion)
+            if not only_image_occlusion and (card_types is None or "Cloze Deletion" in card_types):
+                cloze_result = generate_enhanced_flashcards_with_progress(
+                    filtered_slide_texts, 
+                    filtered_slide_images, 
+                    OPENAI_API_KEY, 
+                    MODEL_NAME, 
+                    MAX_TOKENS, 
+                    TEMPERATURE,
+                    progress,
+                    use_cloze=True,  # Cloze cards
+                    question_style=current_question_style
+                )
+                
+                if isinstance(cloze_result, tuple):
+                    cloze_flashcards, _ = cloze_result
+                else:
+                    cloze_flashcards = cloze_result
+                
+                all_flashcards.extend(cloze_flashcards)
+            
+            # Handle the result
+            if isinstance(all_flashcards, tuple):
+                all_flashcards, analysis_data = all_flashcards
             else:
-                all_flashcards = result
                 analysis_data = None
             
+
+            
             if not all_flashcards:
-                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None, None
+                return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None
             
             # After quality control, ensure we keep Flashcard objects, not tuples
             # Remove any conversion to (question, answer) tuples after quality control
@@ -284,38 +305,49 @@ def run_flashcard_generation(
                                 logging.debug(f"[DEBUG] No regions detected for image: {img_path}, skipping save.")
                                 continue
 
-                            # Generate a hash of the regions
-                            regions_hash = hashlib.md5(str(regions).encode()).hexdigest()
-
-                            # Check if this hash has already been processed
-                            if regions_hash in processed_hashes:
-                                logging.debug(f"[DEBUG] Duplicate regions detected for image: {img_path}, skipping save.")
-                                continue
-
-                            # Add the hash to the set of processed hashes
-                            processed_hashes.add(regions_hash)
-
-                            # Generate red-box mask layer
-                            qmask_img = make_qmask(img, regions[0])  # assume first region for overlay
-
-                            # Composite mask over the original slide so content shows through
+                            # Create a card for EACH detected region
                             base_rgba = img.convert("RGBA")
-                            q_overlay = Image.alpha_composite(base_rgba, qmask_img)
+                            for region_idx, region in enumerate(regions[:max_masks_per_image]):
+                                # Ensure uniqueness using region hash
+                                region_hash = hashlib.md5(str(region).encode()).hexdigest()
+                                if region_hash in processed_hashes:
+                                    continue
+                                processed_hashes.add(region_hash)
 
-                            # Save the composited image
-                            q_overlay.save(occluded_path)
+                                # Generate masks
+                                qmask_img = make_qmask(img, region)
+                                omask_img = make_omask(img, region)
 
-                            # Add debug statement for unique saves
-                            logging.debug(f"[DEBUG] Saved occluded image: {occluded_path} with {len(regions)} masks")
-                            
-                            # Append in dict format understood by the exporter
-                            occlusion_flashcards.append({
-                                "type": "image_occlusion",
-                                "question_image_path": occluded_path,  # masked image (front)
-                                "answer_image_path": img_path          # original image (back)
-                            })
-                            total_occlusion_flashcards += 1
-                            logging.debug(f"✅ Created occlusion dict for slide {slide_idx + 1}, image {img_idx + 1}")
+                                # Composite overlays
+                                q_overlay = Image.alpha_composite(base_rgba, qmask_img)
+                                o_overlay = Image.alpha_composite(base_rgba, omask_img)
+
+                                # Unique filenames per region
+                                occ_path = os.path.join(
+                                    temp_dir,
+                                    f"occluded_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
+                                )
+                                om_path = os.path.join(
+                                    temp_dir,
+                                    f"outline_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
+                                )
+
+                                q_overlay.save(occ_path)
+                                o_overlay.save(om_path)
+
+                                logging.debug(
+                                    f"[DEBUG] Saved occluded image: {occ_path} (region {region_idx+1}/{len(regions)})"
+                                )
+
+                                occlusion_flashcards.append({
+                                    "type": "image_occlusion",
+                                    "question_image_path": occ_path,
+                                    "answer_image_path": img_path,  # show original slide on back
+                                })
+                                total_occlusion_flashcards += 1
+                                logging.debug(
+                                    f"✅ Created occlusion dict for slide {slide_idx + 1}, image {img_idx + 1}, region {region_idx + 1}"
+                                )
                         except Exception as e:
                             logging.debug(f"⚠️ Error on {img_path}: {e}")
                 
@@ -354,47 +386,25 @@ def run_flashcard_generation(
             export_flashcards_to_apkg(all_cards_for_export, apkg_path, pptx_filename=pptx_file.name)
             logging.debug(f"[DEBUG] Wrote APKG to: {apkg_path}")
 
-            # Generate extra materials if requested
-            extra_materials = ""
-            pdf_path = None
-            if any([generate_glossary, generate_topic_map, generate_summary]):
-                progress(0.95, desc="Generating extra materials...")
-                status_msg = "Generating extra materials (glossary, topic map, summary)..."
-                extra_prompt = build_extra_materials_prompt(filtered_slide_texts, current_features)
-                if extra_prompt:
-                    extra_response = call_api_for_extra_materials(
-                        extra_prompt, 
-                        OPENAI_API_KEY, 
-                        MODEL_NAME, 
-                        1000, 
-                        TEMPERATURE
-                    )
-                    if not extra_response.startswith("__API_ERROR__"):
-                        extra_materials = extra_response
-                        pdf_path = os.path.join(temp_dir, "lecture_notes.pdf")
-                        save_text_to_pdf(extra_response, pdf_path)
-                    else:
-                        extra_materials = f"Error generating extra materials: {extra_response}"
-            
+            # Extra material generation removed (glossary, topic map, summary sheet)
+
             progress(1.0, desc="Finalizing...")
             status_msg = "Finalizing and preparing downloads..."
             
             # Prepare output
-            flashcard_summary = f"Successfully generated {len(all_flashcards)} flashcards!\n\n"
+            if only_image_occlusion:
+                flashcard_summary = f"Successfully generated {len(all_flashcards)} image occlusion flashcards!\n\n"
+                flashcard_summary += "📝 Note: Only image occlusion cards were generated. Flashcard level settings were ignored.\n\n"
+            else:
+                flashcard_summary = f"Successfully generated {len(all_flashcards)} flashcards!\n\n"
             
-            if quality_control:
-                flashcard_summary += "🎯 Quality Control Applied:\n"
-                if anti_repetition:
-                    flashcard_summary += "• Anti-repetition: Removed duplicate cards\n"
-                if conciseness:
-                    flashcard_summary += "• Conciseness: Split wordy answers into focused cards\n"
-                if context_enrichment:
-                    flashcard_summary += "• Context enrichment: Added clinical context\n"
-                if depth_consistency:
-                    flashcard_summary += "• Depth consistency: Ensured appropriate complexity\n"
-                if auto_cloze:
-                    flashcard_summary += "• Auto-cloze: Identified cloze opportunities\n"
-                flashcard_summary += "\n"
+            flashcard_summary += "🎯 Quality Control Applied:\n"
+            flashcard_summary += "• Anti-repetition: Removed duplicate cards\n"
+            flashcard_summary += "• Conciseness: Split wordy answers into focused cards\n"
+            flashcard_summary += "• Context enrichment: Added clinical context\n"
+            flashcard_summary += "• Depth consistency: Ensured appropriate complexity\n"
+            flashcard_summary += "• Auto-cloze: Identified cloze opportunities\n"
+            flashcard_summary += "\n"
             
             flashcard_summary += "Sample flashcards:\n"
             for i, preview in enumerate(flashcard_previews[:5]):  # Show first 5 concise previews
@@ -405,16 +415,10 @@ def run_flashcard_generation(
             
             # Copy files to accessible location
             final_apkg_path = "generated_flashcards.apkg"
-            final_pdf_path = "lecture_notes.pdf" if extra_materials else None
-            
             shutil.copy2(apkg_path, final_apkg_path)
-            if extra_materials and pdf_path and os.path.exists(pdf_path):
-                shutil.copy2(pdf_path, "lecture_notes.pdf")
             
-            final_status = f"✅ Complete! Generated {len(flashcard_previews)} quality-controlled flashcards from {len(filtered_slide_texts)} slides."
-            
-            # Call batch_generate_image_occlusion_flashcards with correct image_paths
-            if image_paths:
+            # Run the heavy batch occlusion generation ONLY when the user actually enabled it
+            if enable_image_occlusion and image_paths:
                 # Load configuration
                 with open('config.yaml', 'r') as file:
                     config = yaml.safe_load(file)
@@ -442,12 +446,18 @@ def run_flashcard_generation(
                 logging.debug(f"[DEBUG] Generated flashcard entries: {flashcard_entries}")  # Debug statement to verify flashcard entries
             else:
                 logging.debug("[DEBUG] No images found for occlusion flashcards.")
-            
-            return flashcard_summary, final_status, final_apkg_path, final_pdf_path
+
+            # Set final status message now that all processing is complete
+            final_status = (
+                f"✅ Complete! Generated {len(flashcard_previews)} quality-controlled flashcards "
+                f"from {len(filtered_slide_texts)} slides."
+            )
+ 
+            return flashcard_summary, final_status, final_apkg_path
             
     except Exception as e:
         error_msg = f"Error during processing: {str(e)}"
-        return error_msg, f"❌ Error: {str(e)}", None, None
+        return error_msg, f"❌ Error: {str(e)}", None
 
 # Create the Gradio interface
 def create_interface():
@@ -465,92 +475,29 @@ def create_interface():
                 )
                 
                 gr.Markdown("### ⚙️ Settings")
-                category = gr.Dropdown(
-                    choices=["Medical", "Dental", "Nursing", "Pharmacy", "Other"],
-                    value="Medical",
-                    label="Subject Category"
-                )
                 
-                exam = gr.Dropdown(
-                    choices=["Year 1 MBBS", "Year 2 MBBS", "Year 3 MBBS", "Year 4 MBBS", "Year 5 MBBS", "Finals", "PLAB", "USMLE", "Other"],
-                    value="Year 2 MBBS",
-                    label="Exam Level"
-                )
-                
-                flashcard_type = gr.Radio(
+                # Flashcard Level
+                flashcard_level = gr.Radio(
                     choices=["Level 1", "Level 2", "Both"],
                     value="Both",
                     label="Flashcard Level",
-                    info="Level 1: Basic recall | Level 2: Interpretation & application"
+                    info="Level 1: Basic recall | Level 2: Interpretation & application (Note: Level settings are ignored when only Image Occlusion is selected)"
                 )
                 
-                answer_format = gr.Dropdown(
-                    choices=["minimal", "bullet_points", "short_paragraph", "mixture", "best"],
-                    value="best",
-                    label="Answer Format"
+                # Card Type
+                card_type = gr.CheckboxGroup(
+                    choices=["Basic", "Cloze Deletion", "Image Occlusion"],
+                    value=["Basic"],
+                    label="Card Type",
+                    info="Select one or more card types. Basic: Q&A format | Cloze: Fill-in-the-blank | Image Occlusion: Hide parts of images"
                 )
                 
-                use_cloze = gr.Checkbox(
-                    label="Use Cloze Deletions",
-                    value=False,
-                    info="Automatically convert suitable cards to cloze format"
-                )
-                
-                gr.Markdown("### 🎯 Quality Control")
-                quality_control = gr.Checkbox(
-                    label="Enable Quality Control",
-                    value=True,
-                    info="Apply advanced quality control to improve flashcard quality"
-                )
-                
-                with gr.Accordion("Quality Control Options", open=False):
-                    anti_repetition = gr.Checkbox(
-                        label="Remove Duplicates",
-                        value=True,
-                        info="Detect and remove repetitive flashcards"
-                    )
-                    
-                    conciseness = gr.Checkbox(
-                        label="Improve Conciseness",
-                        value=True,
-                        info="Split wordy answers into focused cards"
-                    )
-                    
-                    context_enrichment = gr.Checkbox(
-                        label="Enrich Context",
-                        value=True,
-                        info="Add clinical context to shallow cards"
-                    )
-                    
-                    depth_consistency = gr.Checkbox(
-                        label="Enforce Depth Consistency",
-                        value=True,
-                        info="Ensure appropriate complexity per level"
-                    )
-                    
-                    auto_cloze = gr.Checkbox(
-                        label="Auto-Detect Cloze Opportunities",
-                        value=True,
-                        info="Automatically identify cards suitable for cloze format"
-                )
-                
-                gr.Markdown("### 📚 Extra Materials")
-                generate_glossary = gr.Checkbox(
-                    label="Generate Glossary",
-                    value=True,
-                    info="Create a glossary of key terms"
-                )
-                
-                generate_topic_map = gr.Checkbox(
-                    label="Generate Topic Map",
-                    value=True,
-                    info="Create an outline of main lecture themes"
-                )
-                
-                generate_summary = gr.Checkbox(
-                    label="Generate Summary Sheet",
-                    value=True,
-                    info="Create a compressed revision version"
+                # Question Style
+                question_style = gr.Dropdown(
+                    choices=["Word for word", "Elaborated", "Simplified"],
+                    value="Word for word",
+                    label="Question Style",
+                    info="Word for word: Exact slide format | Elaborated: Original + explanations | Simplified: Concise, simple phrases"
                 )
                 
                 gr.Markdown("### 📦 Content Sources")
@@ -570,25 +517,24 @@ def create_interface():
                     value=True,
                     info="Include speaker notes if available"
                 )
-                # Optionally, add future toggles here (e.g., audio)
-                # content_audio = gr.Checkbox(label="Audio (future)", value=False, interactive=False)
                 
-                gr.Markdown("### 🖼️ Image Occlusion")
-                enable_image_occlusion = gr.Checkbox(
-                    label="Enable Image Occlusion Flashcards",
-                    value=False,
-                    info="Generate flashcards by hiding parts of diagrams/images (image occlusion)"
+                # Image Occlusion Settings (only visible when Image Occlusion is selected)
+                gr.Markdown("### 🖼️ Image Occlusion Settings")
+                conf_threshold_slider = gr.Slider(
+                    minimum=10,
+                    maximum=100,
+                    value=config['conf_threshold'],
+                    step=1,
+                    label="Confidence Threshold",
+                    visible=False
                 )
-                occlusion_mode = gr.Dropdown(
-                    choices=["AI-assisted (AI detects labels/regions)"],
-                    value="AI-assisted (AI detects labels/regions)",
-                    label="Occlusion Mode",
-                    interactive=False,  # Only one option, so not interactive
-                    info="Image occlusion is fully AI-assisted. Manual annotation is currently disabled."
-                )
-                
-                occlusion_image = gr.Image(
-                    label="Occlusion Image (hidden)",
+
+                max_masks_slider = gr.Slider(
+                    minimum=1,
+                    maximum=10,
+                    value=config['max_masks_per_image'],
+                    step=1,
+                    label="Max Masks per Image",
                     visible=False
                 )
                 
@@ -622,75 +568,79 @@ def create_interface():
                         label="Download Anki .apkg",
                         visible=True
                     )
-                    pdf_download = gr.File(
-                        label="Download PDF Notes",
-                        visible=True
-                    )
         
-        # Add a state to hold slide_images for dynamic UI
-        slide_images_state = gr.State([])
 
-        # Add a dependency to update the occlusion image when toggles change
-        enable_image_occlusion.change(
-            fn=update_occlusion_image_editor,
-            inputs=[enable_image_occlusion, occlusion_mode, slide_images_state],
-            outputs=occlusion_image
-        )
-        occlusion_mode.change(
-            fn=update_occlusion_image_editor,
-            inputs=[enable_image_occlusion, occlusion_mode, slide_images_state],
-            outputs=occlusion_image
-        )
 
-        # Expose sliders in the UI
-        conf_threshold_slider = gr.Slider(
-            minimum=10,
-            maximum=100,
-            value=config['conf_threshold'],
-            step=1,
-            label="Confidence Threshold"
+        # Function to update visibility of image occlusion settings
+        def update_occlusion_settings_visibility(card_type):
+            if "Image Occlusion" in card_type:
+                return gr.update(visible=True), gr.update(visible=True)
+            else:
+                return gr.update(visible=False), gr.update(visible=False)
+
+        # Update image occlusion settings visibility based on card type
+        card_type.change(
+            fn=update_occlusion_settings_visibility,
+            inputs=[card_type],
+            outputs=[conf_threshold_slider, max_masks_slider]
         )
 
-        max_masks_slider = gr.Slider(
-            minimum=1,
-            maximum=10,
-            value=config['max_masks_per_image'],
-            step=1,
-            label="Max Masks per Image"
-        )
-
-        # Update the function to receive slider values directly
-        generate_btn.click(
-            fn=run_flashcard_generation,
-            inputs=[
+        # Update the function to receive the new parameter structure
+        def run_flashcard_generation_updated(
+            pptx_file,
+            flashcard_level,
+            card_type,
+            question_style,
+            content_images,
+            content_notes,
+            conf_threshold,
+            max_masks_per_image,
+            progress=gr.Progress()
+        ):
+            # Map the new UI parameters to the existing function parameters
+            # Handle multiple card types - generate all selected types
+            use_cloze = "Cloze Deletion" in card_type
+            enable_image_occlusion = "Image Occlusion" in card_type
+            occlusion_mode = "AI-assisted (AI detects labels/regions)" if enable_image_occlusion else None
+            occlusion_image = None  # Not used in AI-assisted mode
+            
+            # If no card types selected, default to Basic
+            if not card_type:
+                card_type = ["Basic"]
+            
+            return run_flashcard_generation(
                 pptx_file,
-                category,
-                exam,
-                flashcard_type,
-                answer_format,
+                flashcard_level,  # This replaces the old flashcard_type parameter
+                question_style,
                 use_cloze,
-                generate_glossary,
-                generate_topic_map,
-                generate_summary,
-                quality_control,
-                anti_repetition,
-                conciseness,
-                context_enrichment,
-                depth_consistency,
-                auto_cloze,
                 content_images,
                 content_notes,
                 enable_image_occlusion,
                 occlusion_mode,
                 occlusion_image,
+                conf_threshold,
+                max_masks_per_image,
+                progress,
+                card_type  # Pass the selected card types
+            )
+
+        # Update the function call to use the new parameters
+        generate_btn.click(
+            fn=run_flashcard_generation_updated,
+            inputs=[
+                pptx_file,
+                flashcard_level,
+                card_type,
+                question_style,
+                content_images,
+                content_notes,
                 conf_threshold_slider,
                 max_masks_slider
             ],
             outputs=[
                 flashcard_output,
                 status_output,
-                apkg_download,
-                pdf_download
+                apkg_download
             ]
         )
         
@@ -699,9 +649,9 @@ def create_interface():
         gr.Markdown("""
         1. **Upload** your PowerPoint lecture file (.pptx)
         2. **Configure** settings based on your study needs
-        3. **Enable Quality Control** for better flashcard quality
+        3. **Select Card Type** (Basic, Cloze, or Image Occlusion)
         4. **Click Generate** and wait for processing
-        5. **Download** the CSV file and import into Anki
+        5. **Download** the APKG file and import into Anki
         
         ### 🎯 Quality Control Features
         - **Anti-Repetition**: Removes duplicate cards testing the same concept
@@ -722,12 +672,7 @@ def create_interface():
     
     return interface
 
-# Add a function to update the occlusion image visibility and value
-def update_occlusion_image(enable_image_occlusion, occlusion_mode, slide_images):
-    if enable_image_occlusion and occlusion_mode == "Semi-automated (user selects regions)" and slide_images and slide_images[0]:
-        return gr.update(visible=True, value=slide_images[0][0])
-    else:
-        return gr.update(visible=False, value=None)
+
 
 if __name__ == "__main__":
     # Check if OpenAI API key is available

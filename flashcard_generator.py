@@ -64,7 +64,47 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
-PROMPT_TEMPLATE = config.get('prompt_template')
+PROMPT_TEMPLATE = config.get('prompt_template', """You are an expert medical educator creating Anki flashcards for medical students.
+
+Create concise, focused flashcards that test specific knowledge points. Follow these guidelines:
+
+**Question Style:**
+- Keep questions short and direct (1-2 lines max)
+- Focus on one specific concept per card
+- Use clear, medical terminology
+- Avoid verbose explanations in questions
+
+**Answer Style:**
+- Provide direct, concise answers (1-3 lines max)
+- Include key medical terms and definitions
+- For lists, use bullet points or numbered items
+- Avoid lengthy explanations unless absolutely necessary
+
+**Examples of Good Questions:**
+- "What condition is known for reduced DLCO due to Kco?"
+- "What are two concerns for using DLCO for ILD patients?"
+- "What stage of ILD is DLCO most important for?"
+
+**Examples of Good Answers:**
+- "Interstitial Lung Disease (ILD)"
+- "• Falsely reduced in individuals who fail to inspire to TLC\n• Significant variation"
+- "Early stage"
+
+**Content Focus:**
+- Test key medical concepts, mechanisms, and clinical applications
+- Include important clinical signs, symptoms, and diagnostic criteria
+- Cover drug mechanisms, side effects, and contraindications
+- Test understanding of physiological processes and pathological changes
+
+Generate {flashcard_type} flashcards from the following content:
+
+{batch_text}
+
+Format each flashcard as:
+Question: [concise question]
+Answer: [direct answer]
+
+Create concise answers that are {cloze}.""")
 MODEL_NAME = config.get('model_name', 'gpt-4o')
 MAX_TOKENS = config.get('max_tokens', 2000)
 TEMPERATURE = config.get('temperature', 0.3)
@@ -142,26 +182,51 @@ def extract_text_from_pptx(pptx_path):
 
 
 def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
+    """Extract all pictures from a PowerPoint file.
+
+    The function now returns a list that has **exactly one entry per slide** so that
+    downstream logic can safely `zip(slide_texts, slide_images)` without running
+    out-of-sync.  Each entry is a list (possibly empty) of image paths extracted
+    from that slide.
+    """
+
     prs = Presentation(pptx_path)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    slide_images = []
+
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    slide_images: List[List[str]] = []
+
     for i, slide in enumerate(prs.slides):
-        image_path = None  # Initialize image_path to None
-        images_for_slide = []
-        for j, shape in enumerate(slide.shapes):
-            if shape.shape_type == 13:  # 13 = PICTURE
-                image = shape.image
-                image_bytes = image.blob
-                ext = image.ext
-                image_filename = f"slide{i+1}_img{j+1}.{ext}"
-                image_path = os.path.join(output_dir, image_filename)
-                with open(image_path, "wb") as f:
-                    f.write(image_bytes)
-                images_for_slide.append(image_path)
-        if image_path is not None:  # Ensure image_path is not None before appending
-            slide_images.append(images_for_slide)
-    print(f"Extracted images for {len(slide_images)} slides (some may be empty if no images on slide)")
+        images_for_slide: List[str] = []
+
+        for j, shp in enumerate(slide.shapes):
+            # Only process shapes that *have* an image attribute to avoid
+            # AttributeError on non-picture shapes (e.g. GraphicFrame)
+            if getattr(shp, "shape_type", None) == 13 and hasattr(shp, "image"):
+                try:
+                    pic = shp.image  # type: ignore[attr-defined]
+                    image_bytes = pic.blob
+                    ext = pic.ext
+                    img_name = f"slide{i+1}_img{j+1}.{ext}"
+                    img_path = os.path.join(output_dir, img_name)
+
+                    with open(img_path, "wb") as f:
+                        f.write(image_bytes)
+
+                    images_for_slide.append(img_path)
+                except Exception as e:
+                    # Log and continue on any unexpected problem with this picture
+                    print(f"⚠️  Skipped image on slide {i+1}: {e}")
+
+        # Always append – even if the list is empty – so indices stay aligned
+        slide_images.append(images_for_slide)
+
+    print(
+        f"Extracted images for {len(slide_images)} slides "
+        f"(total images: {sum(len(lst) for lst in slide_images)})"
+    )
+
     return slide_images
 
 
@@ -509,20 +574,27 @@ def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg', pptx_fi
         # TEXT FLASHCARD OBJECTS
         # -----------------------------
         if Flashcard is not None and isinstance(entry, Flashcard):
+            # Determine note model based on cloze status
             if getattr(entry, 'is_cloze', False):
                 text_field = entry.cloze_text or f"{entry.question} – {entry.answer}"
                 note = genanki.Note(model=CLOZE_MODEL, fields=[text_field])
             else:
                 note = genanki.Note(model=BASIC_MODEL, fields=[entry.question, entry.answer])
 
-            # If the Flashcard references an image_path, ensure it gets packaged
+            # If the Flashcard references an image_path, embed it for context
             img_path = getattr(entry, 'image_path', None)
             if img_path and os.path.exists(img_path):
                 fname = os.path.basename(img_path)
                 media.append(img_path)
-                # If this note has an Answer field (Basic model), append the image there
+
+                # Append image below the answer/cloze content.
+                # For Basic model (2+ fields) -> use Answer field (index 1)
                 if len(note.fields) >= 2:
                     note.fields[1] += f"<br><img src='{fname}'>"
+                else:
+                    # Cloze card – single field; append image to same field
+                    note.fields[0] += f"<br><img src='{fname}'>"
+
             deck.add_note(note)
             continue
 
@@ -698,7 +770,7 @@ def should_skip_slide(slide_text, images):
 # Enhanced Flashcard Generation with Semantic Processing
 # =====================
 
-def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False):
+def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False, question_style="Word for word"):
     api_url = "https://api.openai.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -716,6 +788,37 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
         if semantic_processor is not None:
             enhanced_prompt = semantic_processor.build_enhanced_prompt(chunk_data, PROMPT_TEMPLATE)
         else:
+            # Add question style instructions to the prompt
+            style_instructions = ""
+            if question_style == "Word for word":
+                style_instructions = """
+ **Question Style: Word for word**
+ - Keep answers in the exact same format as presented in the slide
+ - Use the precise terminology and phrasing from the original content
+ - Maintain the original structure and order of information
+ - For Level 2 questions: Use reasoning questions but keep answers in exact slide format
+ """
+            elif question_style == "Elaborated":
+                style_instructions = """
+ **Question Style: Elaborated**
+ - Keep answers in the same format as the slide content
+ - Add explanations below the original answer to help clarify concepts
+ - Provide additional context and clinical significance
+ - Format: [Original answer] + [Explanation/context]
+ - For Level 1: Keep explanations brief and focused on basic understanding
+ - For Level 2: Add deeper clinical reasoning and implications
+ """
+            elif question_style == "Simplified":
+                style_instructions = """
+ **Question Style: Simplified**
+ - Take complex explanations and convert them to concise, simple phrases
+ - Use clear, straightforward language that's easy to understand
+ - Break down complex concepts into digestible parts
+ - Maintain accuracy while improving clarity
+ - For Level 1: Focus on basic definitions and facts
+ - For Level 2: Simplify complex reasoning and patterns
+ """
+
             enhanced_prompt = PROMPT_TEMPLATE.format(
                 category=CATEGORY,
                 exam=EXAM,
@@ -727,7 +830,7 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
                 batch_start=chunk_data.get('slide_index', 0) + 1,
                 batch_end=chunk_data.get('slide_index', 0) + 1,
                 batch_text=chunk_data['text']
-            )
+            ) + style_instructions
         content_blocks = [
             {"type": "text", "text": enhanced_prompt}
         ]
@@ -793,7 +896,7 @@ def generate_flashcards_from_semantic_chunks(semantic_chunks, slide_images, api_
             print(f"Error generating flashcards for semantic chunk {i+1}: {e}")
     return all_flashcards
 
-def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False):
+def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_key, model, max_tokens, temperature, progress=None, use_cloze=False, question_style="Word for word"):
     """
     Generate flashcards using semantic processing with progress tracking
     
@@ -806,6 +909,7 @@ def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_ke
         temperature: Temperature for generation
         progress: Progress callback function
         use_cloze: Boolean indicating whether to use cloze cards
+        question_style: Style of questions ("Word for word", "Elaborated", "Simplified")
         
     Returns:
         Tuple of (flashcards, analysis_data)
@@ -834,7 +938,7 @@ def generate_enhanced_flashcards_with_progress(slide_texts, slide_images, api_ke
         
         # Step 3: Generate flashcards from semantic chunks
         all_flashcards = generate_flashcards_from_semantic_chunks(
-            semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress, use_cloze
+            semantic_chunks, slide_images, api_key, model, max_tokens, temperature, progress, use_cloze, question_style
         )
         
         print("\nSample of generated flashcards (before export):")

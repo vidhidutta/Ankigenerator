@@ -31,6 +31,21 @@ cloze: auto_detect
 
 exam: Year 2 MBBS  # or Finals, PLAB, USMLE, Other: [short answer]
 
+# Image Occlusion Configuration
+image_occlusion:
+  region_expand_pct: 0.4  # Expand regions by 40% to ensure full text coverage
+  conf_threshold: 50
+  max_masks_per_image: 6
+  min_region_area: 150
+  max_region_area_ratio: 0.2
+  max_region_width_ratio: 0.7
+  max_region_height_ratio: 0.7
+  min_text_length: 4
+  ignore_nonsemantic_chars: true
+  merge_x_gap_tol: 20
+  prefer_small_regions: true
+  llm_region_selection: false
+
 # Semantic Processing Configuration
 semantic_processing:
   enabled: true

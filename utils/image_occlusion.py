@@ -7,10 +7,22 @@ import base64
 import yaml
 import re
 import settings
-import openai  # NEW: OpenAI Python SDK for LLM selection
-# Ensure API key is set (env var or settings fallback)
-if not openai.api_key:
-    openai.api_key = os.getenv("OPENAI_API_KEY") or getattr(settings, "OPENAI_API_KEY", "")
+from openai import OpenAI  # NEW: OpenAI Python SDK v1
+# Ensure environment variables from a .env file are available before accessing them
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
+_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY") or getattr(settings, "OPENAI_API_KEY", "")
+)
+
+# If no key, disable LLM-based selection but allow rest of pipeline to run
+if not _client.api_key:
+    print(
+        "[WARN] OpenAI API key not set – proceeding without LLM snippet selection."
+    )
+    _client = None  # signal downstream to use default behaviour
 
 
 # === Mask generation helpers ===
@@ -56,6 +68,9 @@ def cleanup_files(file_paths: List[str]):
 with open('config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
+# Optional: Use LLM to pick just one best region (disabled by default)
+llm_region_selection: bool = config.get('llm_region_selection', False)
+
 # Update detect_text_regions function
 conf_threshold = config.get('conf_threshold', 75)
 min_region_area = config.get('min_region_area', 150)
@@ -65,8 +80,30 @@ max_region_height_ratio = config.get('max_region_height_ratio', 0.7)
 min_text_length = config.get('min_text_length', 2)
 ignore_nonsemantic_chars = config.get('ignore_nonsemantic_chars', True)
 
-# Load max_masks_per_image from config
+# Percentage padding (horizontal & vertical) to expand each OCR box before masking
+region_expand_pct = config.get('region_expand_pct', 0.3)
+
+# Load optional fine-tuning parameters for more precise masking
 max_masks_per_image = config.get('max_masks_per_image', 6)
+# Horizontal pixel gap under which separate OCR boxes will be merged.
+# A lower value prevents large multi-cell merges in tables.
+merge_x_gap_tol = config.get('merge_x_gap_tol', 20)
+
+# Load image occlusion specific configuration if available
+if 'image_occlusion' in config:
+    io_config = config['image_occlusion']
+    region_expand_pct = io_config.get('region_expand_pct', 0.4)
+    conf_threshold = io_config.get('conf_threshold', 50)
+    max_masks_per_image = io_config.get('max_masks_per_image', 6)
+    min_region_area = io_config.get('min_region_area', 150)
+    max_region_area_ratio = io_config.get('max_region_area_ratio', 0.2)
+    max_region_width_ratio = io_config.get('max_region_width_ratio', 0.7)
+    max_region_height_ratio = io_config.get('max_region_height_ratio', 0.7)
+    min_text_length = io_config.get('min_text_length', 4)
+    ignore_nonsemantic_chars = io_config.get('ignore_nonsemantic_chars', True)
+    merge_x_gap_tol = io_config.get('merge_x_gap_tol', 20)
+    prefer_small_regions = io_config.get('prefer_small_regions', True)
+    llm_region_selection = io_config.get('llm_region_selection', False)
 
 
 def detect_text_regions(image: Image.Image, conf_threshold: int = 75) -> List[Tuple[int, int, int, int]]:
@@ -114,6 +151,14 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75) -> List[Tu
         if any(abs(x - rx) < 10 and abs(y - ry) < 10 for rx, ry, rw, rh in regions):
             continue
 
+        # NEW: Skip obvious headers early so they are never considered in any pipeline
+        try:
+            if _looks_like_header(text, y, image.height):
+                continue
+        except NameError:
+            # _looks_like_header defined later; safe to ignore if not yet defined when function first imported
+            pass
+
         regions.append((x, y, w, h))
 
         # Add more comprehensive debugging information
@@ -148,48 +193,88 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75) -> List[Tu
         if not any(boxes_overlap(box, other_box) for other_box in filtered_regions):
             filtered_regions.append(box)
 
-    # Sort regions by area (descending) and keep up to max_masks_per_image (configurable)
-    filtered_regions.sort(key=lambda box: box[2] * box[3], reverse=True)
+    # Optionally prioritise smaller regions first to avoid one huge mask on tables
+    prefer_small_regions = config.get('prefer_small_regions', True)
+    filtered_regions.sort(key=lambda box: box[2] * box[3], reverse=not prefer_small_regions)
     filtered_regions = filtered_regions[:max_masks_per_image]
 
     # =========================
     # Expand bounding boxes so they fully cover each word/phrase
-    # Pad each box by 20% horizontally and 20% vertically
+    # Pad each box by region_expand_pct horizontally and vertically
     # =========================
     padded = []
     for x, y, w, h in filtered_regions:
-        pad_x = int(w * 0.2)
-        pad_y = int(h * 0.2)
-        nx = max(0, x - pad_x)
-        ny = max(0, y - pad_y)
-        nw = min(image.width - nx, w + 2 * pad_x)
-        nh = min(image.height - ny, h + 2 * pad_y)
-        padded.append((nx, ny, nw, nh))
+        pad_x = int(w * region_expand_pct)
+        pad_y = int(h * region_expand_pct)
+        
+        # Calculate expanded coordinates
+        expanded_x = max(0, x - pad_x)
+        expanded_y = max(0, y - pad_y)
+        
+        # Calculate expanded dimensions, ensuring they don't exceed image bounds
+        expanded_w = min(w + 2 * pad_x, image.width - expanded_x)
+        expanded_h = min(h + 2 * pad_y, image.height - expanded_y)
+        
+        # Ensure we don't have negative or zero dimensions
+        if expanded_w > 0 and expanded_h > 0:
+            padded.append((expanded_x, expanded_y, expanded_w, expanded_h))
+        else:
+            # Fallback to original region if expansion fails
+            print(f"[DEBUG] Region expansion failed for ({x}, {y}, {w}, {h}), using original")
+            padded.append((x, y, w, h))
+    
     filtered_regions = padded
 
     # Merge adjacent boxes on the same line (e.g., "SPIROMETRY" + "TEST")
-    filtered_regions = merge_adjacent_boxes(filtered_regions, y_tol=10, x_gap_tol=20)
+    filtered_regions = merge_adjacent_boxes(filtered_regions, y_tol=10, x_gap_tol=merge_x_gap_tol)
+
+    # --- Apply additional padding after merging & clamp to image bounds ---
+    PAD_X = 10
+    PAD_Y = 5
+    padded = []
+    for x, y, w, h in filtered_regions:
+        x0 = max(x - PAD_X, 0)
+        y0 = max(y - PAD_Y, 0)
+        x1 = min(x + w + PAD_X, image.width)
+        y1 = min(y + h + PAD_Y, image.height)
+        
+        # Calculate new width and height, ensuring they're positive
+        new_w = x1 - x0
+        new_h = y1 - y0
+        
+        if new_w > 0 and new_h > 0:
+            padded.append((x0, y0, new_w, new_h))
+        else:
+            # Fallback to original region if additional padding fails
+            print(f"[DEBUG] Additional padding failed for ({x}, {y}, {w}, {h}), using original")
+            padded.append((x, y, w, h))
+    
+    filtered_regions = padded
+
+    # Debug: show merged & padded boxes
+    print("[DEBUG] Merged & padded regions:", filtered_regions)
 
     # --------------------------------------------------------
-    # NEW: Ask LLM to choose the single best region to mask
+    # Optional: Ask LLM to choose the single best region to mask
     # --------------------------------------------------------
-    try:
-        # Extract snippet text for each region via a lightweight OCR pass
-        texts: list[str] = []
-        for (x, y, w, h) in filtered_regions:
-            roi = image.crop((x, y, x + w, y + h))
-            raw_txt = pytesseract.image_to_string(roi, config='--psm 6')
-            snippet = raw_txt.strip() or raw_txt  # fallback to raw text if stripping empties it
-            texts.append(snippet if snippet else "<blank>")
+    if llm_region_selection and _client is not None:
+        try:
+            # Extract snippet text for each region via a lightweight OCR pass
+            texts: list[str] = []
+            for (x, y, w, h) in filtered_regions:
+                roi = image.crop((x, y, x + w, y + h))
+                raw_txt = pytesseract.image_to_string(roi, config='--psm 6')
+                snippet = raw_txt.strip() or raw_txt  # fallback to raw text if stripping empties it
+                texts.append(snippet if snippet else "<blank>")
 
-        if filtered_regions and texts:
-            best_i = pick_best_snippet_via_llm(filtered_regions, texts, image.size)
-            # Clamp index to valid range just in case
-            best_i = max(0, min(best_i, len(filtered_regions) - 1))
-            print(f"[DEBUG] LLM selected snippet: {texts[best_i]}")
-            filtered_regions = [filtered_regions[best_i]]
-    except Exception as e:
-        print(f"[DEBUG] LLM selection failed: {e}")
+            if filtered_regions and texts:
+                best_i = pick_best_snippet_via_llm(filtered_regions, texts, image.size)
+                # Clamp index to valid range just in case
+                best_i = max(0, min(best_i, len(filtered_regions) - 1))
+                print(f"[DEBUG] LLM selected snippet: {texts[best_i]}")
+                filtered_regions = [filtered_regions[best_i]]
+        except Exception as e:
+            print(f"[DEBUG] LLM selection failed: {e}")
 
     # Final debug statement
     print(f"[DEBUG] Regions after LLM selection: {len(filtered_regions)}")
@@ -365,6 +450,20 @@ def merge_adjacent_boxes(boxes, y_tol=10, x_gap_tol=20):
 
 export_dir = os.path.expanduser('~/anki-flashcard-generator/debug_images')
 
+# --- Helper: detect likely header text vs data cell ---
+def _looks_like_header(txt: str, y: int, img_h: int) -> bool:
+    """Return True for obvious headers (ALL-CAPS at top row, short & alpha, etc.)."""
+    txt_stripped = txt.strip()
+
+    # NEW RULE: treat any ALL-CAPS string of ≤3 words as a header (regardless of position)
+    if txt_stripped.isupper() and len(txt_stripped.split()) <= 3:
+        return True
+
+    all_caps     = txt_stripped.isupper() and len(txt_stripped) <= 3 or txt_stripped in {"NORMAL","ABNORMAL"}
+    top_band     = y < img_h * 0.25       # very top quarter of slide
+    very_short   = len(txt_stripped.split()) <= 2
+    return (all_caps and top_band) or (very_short and top_band)
+
 
 def pick_best_snippet_via_llm(regions, texts, img_size):
     """Use an LLM (GPT-4o-mini) to choose which snippet to mask.
@@ -378,6 +477,25 @@ def pick_best_snippet_via_llm(regions, texts, img_size):
         int: index of the region deemed most pedagogically valuable to hide.
     """
     H, W = img_size[1], img_size[0]
+
+    # --- NEW: filter out likely headers ---
+    content_regions = []
+    content_texts   = []
+    for (txt, (x, y, w, h)) in zip(texts, regions):
+        if not _looks_like_header(txt, y, H):
+            content_regions.append((x, y, w, h))
+            content_texts.append(txt)
+
+    # Fall back to all regions if everything was filtered out
+    if content_regions:
+        regions, texts = content_regions, content_texts
+    else:
+        # No data cells survived the header filter – keep the full list
+        pass
+
+    # Debug: show texts that will be provided to LLM for selection
+    print("[DEBUG] Texts sent to LLM:", texts)
+
     lines = []
     for idx, (txt, (x, y, w, h)) in enumerate(zip(texts, regions)):
         h_band = "top" if y < H * 0.33 else "middle" if y < H * 0.66 else "bottom"
@@ -388,22 +506,55 @@ def pick_best_snippet_via_llm(regions, texts, img_size):
 
     prompt = (
         "You are a medical educator creating an Anki flashcard.\n"
-        "Slide snippets:\n" + "\n".join(lines) + "\n"
+        "Here are the merged & padded slide snippets:\n"
+        + "\n".join(lines) + "\n"
         "Which ONE snippet, if hidden, would best test a student's understanding?\n"
         "Reply with ONLY the integer index."
     )
 
-    resp = openai.ChatCompletion.create(
+    # If no client/key, default to first region
+    if _client is None:
+        return 0
+
+    resp = _client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a medical expert."},
-            {"role": "user", "content": prompt},
+            {"role": "user",   "content": prompt},
         ],
         temperature=0.0,
         max_tokens=3,
     )
+    txt = resp.choices[0].message.content
     import re as _re
-    idx_match = _re.search(r"\d+", resp.choices[0].message.content)
+    idx_match = _re.search(r"\d+", txt)
     if not idx_match:
-        raise ValueError("LLM response did not contain an index")
-    return int(idx_match.group())
+        # Ask once more with a stricter system message
+        resp = _client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Reply ONLY with a single integer 0-n that appears in the list."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+            max_tokens=3,
+        )
+        txt = resp.choices[0].message.content
+        idx_match = _re.search(r"\d+", txt)
+
+    if not idx_match:
+        raise ValueError(f"LLM response had no integer index: {txt}")
+
+    best_i = int(idx_match.group())
+    best_i = max(0, min(best_i, len(regions) - 1))  # clamp to valid range
+
+    # Detailed debugging information
+    print("[DEBUG] GPT raw reply:", txt)
+    print("[DEBUG] Candidate list AFTER filter:", texts)
+    print("[DEBUG] Index chosen:", best_i)
+    print("[DEBUG] LLM chose:", texts[best_i] if texts else "<none>")
+
+    # previous concise debug kept for compatibility (optional)
+    # print(f"[DEBUG] LLM chose index {best_i} → {texts[best_i]}")
+
+    return best_i
