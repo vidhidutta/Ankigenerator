@@ -27,14 +27,21 @@ if not _client.api_key:
 
 # === Mask generation helpers ===
 
+FORCE_MASK_DEBUG = True  # Set to True to force a visible mask for debugging
+
+# Update make_qmask to use the debug color if enabled
 def make_qmask(image: Image.Image, region: Tuple[int, int, int, int]) -> Image.Image:
-    """Return an RGBA mask with a semi-opaque red fill over the region."""
+    """Return an RGBA mask with a semi-opaque red fill over the region, or bright green if FORCE_MASK_DEBUG."""
     mask = Image.new("RGBA", image.size, (0, 0, 0, 0))  # type: ignore[arg-type]
     draw = ImageDraw.Draw(mask)
     x, y, w, h = region
-    # Increase opacity for better visibility (alpha 200 out of 255)
-    # Use a fully opaque red rectangle so the mask is unmistakable
-    draw.rectangle([x, y, x + w, y + h], fill=(255, 0, 0, 255))
+    if FORCE_MASK_DEBUG:
+        # Fully opaque, bright green for debug
+        draw.rectangle([x, y, x + w, y + h], fill=(0, 255, 0, 255))
+    else:
+        # Usual red mask
+        draw.rectangle([x, y, x + w, y + h], fill=(255, 0, 0, 255))
+    print(f"[DEBUG] make_qmask: region=({x}, {y}, {w}, {h}), FORCE_MASK_DEBUG={FORCE_MASK_DEBUG}")
     return mask
 
 
@@ -104,182 +111,103 @@ if 'image_occlusion' in config:
     merge_x_gap_tol = io_config.get('merge_x_gap_tol', 20)
     prefer_small_regions = io_config.get('prefer_small_regions', True)
     llm_region_selection = io_config.get('llm_region_selection', False)
+    # --- Block detection refinements ---
+    morph_kernel_width = io_config.get('morph_kernel_width', 25)
+    morph_kernel_height = io_config.get('morph_kernel_height', 25)
+    dbscan_eps = io_config.get('dbscan_eps', 50)
+    dbscan_min_samples = io_config.get('dbscan_min_samples', 1)
+    min_block_area = io_config.get('min_block_area', 200)
+    table_merge_band = io_config.get('table_merge_band', 20)
+    centroid_merge_dist = io_config.get('centroid_merge_dist', 30)
+    iou_merge_thresh = io_config.get('iou_merge_thresh', 0.2)
 
 
-def detect_text_regions(image: Image.Image, conf_threshold: int = 75) -> List[Tuple[int, int, int, int]]:
-    print(f"[DEBUG] Executing detect_text_regions with conf_threshold: {conf_threshold}")
+def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks: bool = True, block_kernel: tuple = (25, 25), debug_path: str = None) -> List[Tuple[int, int, int, int]]:
+    io_config = config.get('image_occlusion', {})
+    enable_semantic_masking = io_config.get('enable_semantic_masking', False)
+    print(f"[DEBUG] Executing detect_text_regions with conf_threshold: {conf_threshold}, use_blocks={use_blocks}, enable_semantic_masking={enable_semantic_masking}")
     image = preprocess_image_for_ocr(image)
+
+    if enable_semantic_masking:
+        # --- Experimental semantic masking pipeline ---
+        print("[DEBUG] Experimental semantic masking mode enabled.")
+        # TODO: Implement line-level OCR extraction, semantic chunking, and region unioning here.
+        # For now, just return an empty list as a placeholder.
+        return []
     ocr_data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-    
-    regions = []
+    ocr_boxes = []
     img_area = image.width * image.height
     max_area_ratio = 0.2
-
     for i in range(len(ocr_data['level'])):
         text_raw = ocr_data['text'][i]
         text = text_raw.strip() if isinstance(text_raw, str) else ""
         if not text:
             continue
-
-        # Minimum character length filter (now uses configurable min_text_length)
         if len(re.sub(r"[^\w]", "", text.strip())) < min_text_length:
             continue
-
-        # Improved symbol/noise filter
-        if re.match(r"^[\s\.\,\-\|\_\(\)\[\]\:\/\\]*$", text.strip()):
+        if re.match(r"^[\s\.,\-\|_\(\)\[\]:/\\]*$", text.strip()):
             continue
-
         conf_str = str(ocr_data['conf'][i])
         conf = int(conf_str) if conf_str.isdigit() else -1
         if conf < conf_threshold:
             continue
-
         x, y, w, h = ocr_data['left'][i], ocr_data['top'][i], ocr_data['width'][i], ocr_data['height'][i]
         area = w * h
-
-        # Skip overly tiny or huge regions
         if area < 100 or area > img_area * 0.25:
             continue
-
         if area < min_region_area:
             continue
         if area / img_area > max_area_ratio:
             continue
         if w > image.width * max_region_width_ratio and h > image.height * max_region_height_ratio:
             continue
-
-        if any(abs(x - rx) < 10 and abs(y - ry) < 10 for rx, ry, rw, rh in regions):
+        if any(abs(x - rx) < 10 and abs(y - ry) < 10 for rx, ry, rw, rh in ocr_boxes):
             continue
-
-        # NEW: Skip obvious headers early so they are never considered in any pipeline
         try:
             if _looks_like_header(text, y, image.height):
                 continue
         except NameError:
-            # _looks_like_header defined later; safe to ignore if not yet defined when function first imported
             pass
-
-        regions.append((x, y, w, h))
-
-        # Add more comprehensive debugging information
-        print(f"[DEBUG] Processed region: '{text}' | Conf: {conf} | Box: ({x}, {y}, {w}, {h})")
-
-    # Sort regions by vertical position, then left-to-right
-    regions.sort(key=lambda box: (box[1], box[0]))
-
-    # Add padding to each region
-    padding = 5
-    padded_regions = []
-    for x, y, w, h in regions:
-        x1 = max(x - padding, 0)
-        y1 = max(y - padding, 0)
-        x2 = min(x + w + padding, image.width)
-        y2 = min(y + h + padding, image.height)
-        # Convert back to width/height representation for downstream code
-        padded_regions.append((x1, y1, x2 - x1, y2 - y1))
-
-    # Filter overlapping boxes
-    def boxes_overlap(box1, box2, threshold=0.6):
-        x1, y1, w1, h1 = box1
-        x2, y2, w2, h2 = box2
-        inter_area = max(0, min(x1 + w1, x2 + w2) - max(x1, x2)) * max(0, min(y1 + h1, y2 + h2) - max(y1, y2))
-        box1_area = w1 * h1
-        box2_area = w2 * h2
-        iou = inter_area / float(box1_area + box2_area - inter_area)
-        return iou > threshold
-
-    filtered_regions = []
-    for box in padded_regions:
-        if not any(boxes_overlap(box, other_box) for other_box in filtered_regions):
-            filtered_regions.append(box)
-
-    # Optionally prioritise smaller regions first to avoid one huge mask on tables
-    prefer_small_regions = config.get('prefer_small_regions', True)
-    filtered_regions.sort(key=lambda box: box[2] * box[3], reverse=not prefer_small_regions)
-    filtered_regions = filtered_regions[:max_masks_per_image]
-
-    # =========================
-    # Expand bounding boxes so they fully cover each word/phrase
-    # Pad each box by region_expand_pct horizontally and vertically
-    # =========================
-    padded = []
-    for x, y, w, h in filtered_regions:
-        pad_x = int(w * region_expand_pct)
-        pad_y = int(h * region_expand_pct)
-        
-        # Calculate expanded coordinates
-        expanded_x = max(0, x - pad_x)
-        expanded_y = max(0, y - pad_y)
-        
-        # Calculate expanded dimensions, ensuring they don't exceed image bounds
-        expanded_w = min(w + 2 * pad_x, image.width - expanded_x)
-        expanded_h = min(h + 2 * pad_y, image.height - expanded_y)
-        
-        # Ensure we don't have negative or zero dimensions
-        if expanded_w > 0 and expanded_h > 0:
-            padded.append((expanded_x, expanded_y, expanded_w, expanded_h))
+        ocr_boxes.append((x, y, w, h))
+        print(f"[DEBUG] Processed OCR region: '{text}' | Conf: {conf} | Box: ({x}, {y}, {w}, {h})")
+    # Debug log
+    print(f"[DEBUG] OCR words: {len(ocr_boxes)}")
+    if use_blocks:
+        # --- Block-level detection ---
+        blocks = detect_text_blocks_cv(
+            image,
+            kernel_size=(morph_kernel_width, morph_kernel_height),
+            min_area=min_region_area,
+            use_closing=True,
+            debug_path=debug_path
+        )
+        print(f"[DEBUG] Morphology blocks: {len(blocks)}")
+        merged_blocks = merge_ocr_boxes_into_blocks(ocr_boxes, blocks)
+        print(f"[DEBUG] Merged into {len(merged_blocks)} block-level regions.")
+        if len(merged_blocks) == 0:
+            # Fallback: cluster OCR boxes
+            print("[DEBUG] Morphology produced zero blocks, falling back to OCR clustering.")
+            clusters = cluster_ocr_boxes(
+                ocr_boxes,
+                eps=dbscan_eps,
+                min_samples=dbscan_min_samples,
+                debug_path=debug_path,
+                image=image
+            )
+            print(f"[DEBUG] OCR clusters: {len(clusters)}")
+            print("[DEBUG] Fallback used: OCR clustering")
+            # Post-process clusters
+            post_clusters = postprocess_blocks(clusters)
+            print(f"[DEBUG] Post-processed clusters: {len(post_clusters)}")
+            return post_clusters
         else:
-            # Fallback to original region if expansion fails
-            print(f"[DEBUG] Region expansion failed for ({x}, {y}, {w}, {h}), using original")
-            padded.append((x, y, w, h))
-    
-    filtered_regions = padded
-
-    # Merge adjacent boxes on the same line (e.g., "SPIROMETRY" + "TEST")
-    filtered_regions = merge_adjacent_boxes(filtered_regions, y_tol=10, x_gap_tol=merge_x_gap_tol)
-
-    # --- Apply additional padding after merging & clamp to image bounds ---
-    PAD_X = 10
-    PAD_Y = 5
-    padded = []
-    for x, y, w, h in filtered_regions:
-        x0 = max(x - PAD_X, 0)
-        y0 = max(y - PAD_Y, 0)
-        x1 = min(x + w + PAD_X, image.width)
-        y1 = min(y + h + PAD_Y, image.height)
-        
-        # Calculate new width and height, ensuring they're positive
-        new_w = x1 - x0
-        new_h = y1 - y0
-        
-        if new_w > 0 and new_h > 0:
-            padded.append((x0, y0, new_w, new_h))
-        else:
-            # Fallback to original region if additional padding fails
-            print(f"[DEBUG] Additional padding failed for ({x}, {y}, {w}, {h}), using original")
-            padded.append((x, y, w, h))
-    
-    filtered_regions = padded
-
-    # Debug: show merged & padded boxes
-    print("[DEBUG] Merged & padded regions:", filtered_regions)
-
-    # --------------------------------------------------------
-    # Optional: Ask LLM to choose the single best region to mask
-    # --------------------------------------------------------
-    if llm_region_selection and _client is not None:
-        try:
-            # Extract snippet text for each region via a lightweight OCR pass
-            texts: list[str] = []
-            for (x, y, w, h) in filtered_regions:
-                roi = image.crop((x, y, x + w, y + h))
-                raw_txt = pytesseract.image_to_string(roi, config='--psm 6')
-                snippet = raw_txt.strip() or raw_txt  # fallback to raw text if stripping empties it
-                texts.append(snippet if snippet else "<blank>")
-
-            if filtered_regions and texts:
-                best_i = pick_best_snippet_via_llm(filtered_regions, texts, image.size)
-                # Clamp index to valid range just in case
-                best_i = max(0, min(best_i, len(filtered_regions) - 1))
-                print(f"[DEBUG] LLM selected snippet: {texts[best_i]}")
-                filtered_regions = [filtered_regions[best_i]]
-        except Exception as e:
-            print(f"[DEBUG] LLM selection failed: {e}")
-
-    # Final debug statement
-    print(f"[DEBUG] Regions after LLM selection: {len(filtered_regions)}")
-
-    return filtered_regions
+            print("[DEBUG] Fallback not needed: morphology blocks used")
+            # Post-process merged blocks
+            post_blocks = postprocess_blocks(merged_blocks)
+            print(f"[DEBUG] Post-processed blocks: {len(post_blocks)}")
+            return post_blocks
+    else:
+        return ocr_boxes
 
 
 def mask_regions(image: Image.Image, regions: List[Tuple[int, int, int, int]], method: str = 'rectangle') -> Image.Image:
@@ -346,11 +274,16 @@ def batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_thre
         if image.mode != 'RGB':
             image = image.convert('RGB')
         # Use higher confidence threshold (default now 50 via config)
-        regions = detect_text_regions(image, conf_threshold=conf_threshold)
+        io_config = config.get("image_occlusion", {})
+        use_blocks = io_config.get("use_blocks", True)
+        regions = detect_text_regions(image, conf_threshold=conf_threshold, use_blocks=use_blocks)
+        print(f"[DEBUG] Regions for {img_path}: {regions}")
+        # Always save a debug overlay image, even if regions is empty
+        debug_img_path = os.path.join(export_dir, f"{os.path.splitext(os.path.basename(img_path))[0]}_debug_detected_regions.png")
+        draw_debug_boxes(image, regions, debug_img_path)
         if not regions:
             print(f"[DEBUG] No regions detected for image: {img_path}")
             continue
-        # No need for generic 10-mask warning; regions already capped to top 2
         print(f"[DEBUG] Using {len(regions)} masks for image: {img_path}")
         for idx, region in enumerate(regions):
             area = region[2] * region[3]
@@ -364,13 +297,17 @@ def batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_thre
 
                 alt_text_for_this_image = "What is hidden here?"
 
+                # Debug: print region info before masking
+                print(f"[DEBUG] Masking region {idx}: {region}")
                 # Generate the question and original masks
                 qmask_layer = make_qmask(image, region)
                 omask_layer = make_omask(image, region)
+                print(f"[DEBUG] Mask created for region {idx}")
 
                 # Composite masks onto the original image for clearer visuals
                 q_overlay = Image.alpha_composite(image.convert('RGBA'), qmask_layer)
                 o_overlay = Image.alpha_composite(image.convert('RGBA'), omask_layer)
+                print(f"[DEBUG] Overlay composited for region {idx}")
 
                 # Paths for saved images
                 occ_path = os.path.join(export_dir, f"{base_name}_q.png")
@@ -379,6 +316,7 @@ def batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_thre
                 # Save images to disk
                 q_overlay.save(occ_path)
                 o_overlay.save(om_path)
+                print(f"[DEBUG] Saved masked images: {occ_path}, {om_path}")
 
                 # Track for potential cleanup
                 files_to_cleanup.extend([occ_path, om_path])
@@ -558,3 +496,188 @@ def pick_best_snippet_via_llm(regions, texts, img_size):
     # print(f"[DEBUG] LLM chose index {best_i} → {texts[best_i]}")
 
     return best_i
+
+import cv2
+import numpy as np
+from sklearn.cluster import DBSCAN
+import math
+
+def detect_text_blocks_cv(image: Image.Image, kernel_size: tuple = (25, 25), min_area: int = 100, use_closing: bool = True, debug_path: str = None) -> list:
+    """
+    Detect visually connected text blocks using OpenCV morphology.
+    Args:
+        image: PIL Image
+        kernel_size: (width, height) of the dilation/closing kernel
+        min_area: minimum area for a block
+        use_closing: whether to use closing (dilate then erode)
+        debug_path: if provided, saves a debug image with block rectangles
+    Returns:
+        List of (x, y, w, h) bounding boxes for detected blocks
+    """
+    img = np.array(image.convert('L'))
+    _, thresh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
+    if use_closing:
+        morphed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    else:
+        morphed = cv2.dilate(thresh, kernel, iterations=1)
+    contours, _ = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    blocks = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if w * h > min_area:
+            blocks.append((x, y, w, h))
+    # Save debug image
+    if debug_path:
+        import os
+        debug_dir = os.path.join(os.path.dirname(__file__), '..', 'debug_images')
+        os.makedirs(debug_dir, exist_ok=True)
+        debug_filename = os.path.basename(debug_path)
+        debug_save_path = os.path.join(debug_dir, debug_filename)
+        debug_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        for (x, y, w, h) in blocks:
+            color = (0, 255, 0) if FORCE_MASK_DEBUG else (0, 0, 255)
+            cv2.rectangle(debug_img, (x, y), (x + w, y + h), color, 2)
+        cv2.imwrite(debug_save_path, debug_img)
+        print(f"[DEBUG] Block debug image saved to: {debug_save_path}")
+    return blocks
+
+def cluster_ocr_boxes(ocr_boxes, eps: int = 50, min_samples: int = 1, debug_path: str = None, image=None):
+    """
+    Cluster OCR boxes by proximity using DBSCAN, then merge each cluster into a block.
+    """
+    if not ocr_boxes:
+        return []
+    centers = np.array([[x + w/2, y + h/2] for x, y, w, h in ocr_boxes])
+    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(centers)
+    labels = clustering.labels_
+    clusters = {}
+    for label, box in zip(labels, ocr_boxes):
+        clusters.setdefault(label, []).append(box)
+    merged = []
+    for boxes in clusters.values():
+        xs = [b[0] for b in boxes]
+        ys = [b[1] for b in boxes]
+        ws = [b[0]+b[2] for b in boxes]
+        hs = [b[1]+b[3] for b in boxes]
+        x0, y0 = min(xs), min(ys)
+        x1, y1 = max(ws), max(hs)
+        merged.append((x0, y0, x1-x0, y1-y0))
+    # Debug overlay
+    if debug_path and image is not None:
+        import os
+        debug_dir = os.path.join(os.path.dirname(__file__), '..', 'debug_images')
+        os.makedirs(debug_dir, exist_ok=True)
+        debug_filename = os.path.basename(debug_path).replace('.png', '_cluster.png')
+        debug_save_path = os.path.join(debug_dir, debug_filename)
+        img = np.array(image.convert('RGB'))
+        for (x, y, w, h) in merged:
+            color = (0, 255, 0) if FORCE_MASK_DEBUG else (255, 0, 0)
+            cv2.rectangle(img, (int(x), int(y)), (int(x + w), int(y + h)), color, 2)
+        cv2.imwrite(debug_save_path, img)
+        print(f"[DEBUG] Cluster debug image saved to: {debug_save_path}")
+    return merged
+
+def merge_ocr_boxes_into_blocks(ocr_boxes, blocks):
+    """
+    Assign each OCR box to the block it overlaps most, then merge all boxes per block.
+    Args:
+        ocr_boxes: list of (x, y, w, h)
+        blocks: list of (x, y, w, h)
+    Returns:
+        List of merged (x, y, w, h) per block
+    """
+    from collections import defaultdict
+    def iou(boxA, boxB):
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[0]+boxA[2], boxB[0]+boxB[2])
+        yB = min(boxA[1]+boxA[3], boxB[1]+boxB[3])
+        interW = max(0, xB - xA)
+        interH = max(0, yB - yA)
+        interArea = interW * interH
+        boxAArea = boxA[2] * boxA[3]
+        boxBArea = boxB[2] * boxB[3]
+        return interArea / float(boxAArea + boxBArea - interArea + 1e-6)
+    def centroid(box):
+        return (box[0] + box[2]/2, box[1] + box[3]/2)
+    def area(box):
+        return box[2] * box[3]
+    block_to_boxes = defaultdict(list)
+    for ocr in ocr_boxes:
+        best_block = None
+        best_iou = 0
+        for block in blocks:
+            score = iou(ocr, block)
+            if score > best_iou:
+                best_iou = score
+                best_block = block
+        if best_block and best_iou > 0.1:
+            block_to_boxes[best_block].append(ocr)
+    merged = []
+    for block, boxes in block_to_boxes.items():
+        xs = [b[0] for b in boxes]
+        ys = [b[1] for b in boxes]
+        ws = [b[0]+b[2] for b in boxes]
+        hs = [b[1]+b[3] for b in boxes]
+        x0, y0 = min(xs), min(ys)
+        x1, y1 = max(ws), max(hs)
+        merged.append((x0, y0, x1-x0, y1-y0))
+    return merged
+
+def postprocess_blocks(blocks):
+    """
+    Post-process block list:
+    - Merge any two boxes whose IoU > iou_merge_thresh or centroids within centroid_merge_dist
+    - Drop any block with area < min_block_area
+    - Only merge boxes in same row/col if their centers align within table_merge_band
+    """
+    def iou(boxA, boxB):
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[0]+boxA[2], boxB[0]+boxB[2])
+        yB = min(boxA[1]+boxA[3], boxB[1]+boxB[3])
+        interW = max(0, xB - xA)
+        interH = max(0, yB - yA)
+        interArea = interW * interH
+        boxAArea = boxA[2] * boxA[3]
+        boxBArea = boxB[2] * boxB[3]
+        return interArea / float(boxAArea + boxBArea - interArea + 1e-6)
+    def centroid(box):
+        return (box[0] + box[2]/2, box[1] + box[3]/2)
+    def area(box):
+        return box[2] * box[3]
+    merged = blocks[:]
+    changed = True
+    while changed:
+        changed = False
+        n = len(merged)
+        for i in range(n):
+            for j in range(i+1, n):
+                b1, b2 = merged[i], merged[j]
+                c1, c2 = centroid(b1), centroid(b2)
+                # Table heuristics: only merge if centers align in row/col within band
+                row_aligned = abs(c1[1] - c2[1]) < table_merge_band
+                col_aligned = abs(c1[0] - c2[0]) < table_merge_band
+                iou_val = iou(b1, b2)
+                cent_dist = math.hypot(c1[0]-c2[0], c1[1]-c2[1])
+                if (iou_val > iou_merge_thresh or cent_dist < centroid_merge_dist) and (row_aligned or col_aligned):
+                    # Merge
+                    x0 = min(b1[0], b2[0])
+                    y0 = min(b1[1], b2[1])
+                    x1 = max(b1[0]+b1[2], b2[0]+b2[2])
+                    y1 = max(b1[1]+b1[3], b2[1]+b2[3])
+                    new_box = (x0, y0, x1-x0, y1-y0)
+                    merged = [merged[k] for k in range(n) if k != i and k != j] + [new_box]
+                    changed = True
+                    print(f"[DEBUG] Merged blocks {i},{j} (IoU={iou_val:.2f}, dist={cent_dist:.1f}, row={row_aligned}, col={col_aligned})")
+                    break
+            if changed:
+                break
+    # Filter by area
+    filtered = [b for b in merged if area(b) >= min_block_area]
+    dropped = len(merged) - len(filtered)
+    if dropped > 0:
+        print(f"[DEBUG] Dropped {dropped} blocks with area < {min_block_area}")
+    print(f"[DEBUG] Final block count after post-processing: {len(filtered)}")
+    return filtered

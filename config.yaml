@@ -34,17 +34,28 @@ exam: Year 2 MBBS  # or Finals, PLAB, USMLE, Other: [short answer]
 # Image Occlusion Configuration
 image_occlusion:
   region_expand_pct: 0.4  # Expand regions by 40% to ensure full text coverage
-  conf_threshold: 50
+  conf_threshold: 30
   max_masks_per_image: 6
-  min_region_area: 150
-  max_region_area_ratio: 0.2
+  min_region_area: 50
+  max_region_area_ratio: 0.5
   max_region_width_ratio: 0.7
   max_region_height_ratio: 0.7
-  min_text_length: 4
+  min_text_length: 2
   ignore_nonsemantic_chars: true
   merge_x_gap_tol: 20
   prefer_small_regions: true
   llm_region_selection: false
+  enable_semantic_masking: false  # opt-in experimental mode for line-level & semantic chunk grouping
+  use_blocks: false  # opt-in block-level merging for text regions
+  # --- Block detection refinements ---
+  morph_kernel_width: 25   # Morphology kernel width (default 25)
+  morph_kernel_height: 25  # Morphology kernel height (default 25)
+  dbscan_eps: 50           # DBSCAN eps for clustering OCR boxes
+  dbscan_min_samples: 1    # DBSCAN min_samples for clustering
+  min_block_area: 200      # Minimum area for a block after merging/post-processing
+  table_merge_band: 20     # Max center alignment band (px) for row/col merging
+  centroid_merge_dist: 30  # Max centroid distance (px) for merging
+  iou_merge_thresh: 0.2    # IoU threshold for merging blocks
 
 # Semantic Processing Configuration
 semantic_processing:

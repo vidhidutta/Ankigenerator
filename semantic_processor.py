@@ -33,12 +33,13 @@ class SemanticProcessor:
         Args:
             model_name: Model type (currently only supports 'tfidf')
         """
+        # Use more robust parameters for small datasets
         self.vectorizer = TfidfVectorizer(
             max_features=1000,
             stop_words='english',
             ngram_range=(1, 2),
-            min_df=1,
-            max_df=0.9
+            min_df=0.1,  # Changed from 1 to 0.1 (10% of documents)
+            max_df=0.95  # Changed from 0.9 to 0.95 (more permissive)
         )
         self.stop_words = set(stopwords.words('english'))
         
@@ -171,10 +172,33 @@ class SemanticProcessor:
         # Clean and prepare texts
         cleaned_texts = [self.clean_text(text) for text in slide_texts]
         
-        # Compute TF-IDF embeddings
-        embeddings = self.vectorizer.fit_transform(cleaned_texts).toarray()
-        
-        return embeddings
+        try:
+            # Compute TF-IDF embeddings
+            embeddings = self.vectorizer.fit_transform(cleaned_texts).toarray()
+            self.logger.info(f"Successfully computed TF-IDF embeddings: {embeddings.shape}")
+            return embeddings
+        except ValueError as e:
+            if "max_df < min_df" in str(e):
+                self.logger.warning(f"TF-IDF parameter conflict: {e}. Using fallback parameters.")
+                # Try with more permissive parameters
+                fallback_vectorizer = TfidfVectorizer(
+                    max_features=500,
+                    stop_words='english',
+                    ngram_range=(1, 1),
+                    min_df=0.05,  # Even more permissive
+                    max_df=0.98
+                )
+                embeddings = fallback_vectorizer.fit_transform(cleaned_texts).toarray()
+                self.logger.info(f"Fallback TF-IDF successful: {embeddings.shape}")
+                return embeddings
+            else:
+                self.logger.error(f"TF-IDF computation failed: {e}")
+                # Return simple bag-of-words as last resort
+                from sklearn.feature_extraction.text import CountVectorizer
+                count_vectorizer = CountVectorizer(max_features=100)
+                embeddings = count_vectorizer.fit_transform(cleaned_texts).toarray()
+                self.logger.info(f"Using CountVectorizer fallback: {embeddings.shape}")
+                return embeddings
     
     def find_similar_slides(self, embeddings: np.ndarray, similarity_threshold: float = 0.7) -> List[List[int]]:
         """

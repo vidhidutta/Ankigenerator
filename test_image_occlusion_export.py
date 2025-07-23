@@ -11,7 +11,8 @@ from utils.image_occlusion import (
     detect_text_regions,
     mask_regions,
     generate_occlusion_flashcard_entry,
-    save_occlusion_pair
+    save_occlusion_pair,
+    config
 )
 
 def create_test_image_occlusion_cards():
@@ -24,7 +25,9 @@ def create_test_image_occlusion_cards():
     original_path = "complex_test_image.png"
     
     # Detect regions and create occluded version
-    regions = detect_text_regions(img, conf_threshold=30)
+    io_config = config.get("image_occlusion", {})
+    use_blocks = io_config.get("use_blocks", True)
+    regions = detect_text_regions(img, conf_threshold=30, use_blocks=use_blocks)
     if regions:
         occluded_img = mask_regions(img, regions, method='rectangle')
         occluded_path = "occluded_complex_test_image.png"
@@ -78,7 +81,9 @@ def test_occlusion_utility_functions():
         img = Image.open('complex_test_image.png')
         
         # Test region detection with the complex image
-        regions = detect_text_regions(img, conf_threshold=30)
+        io_config = config.get("image_occlusion", {})
+        use_blocks = io_config.get("use_blocks", True)
+        regions = detect_text_regions(img, conf_threshold=30, use_blocks=use_blocks)
         print(f"✅ Text regions detected: {len(regions)}")
         
         # Test masking

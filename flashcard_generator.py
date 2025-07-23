@@ -24,6 +24,8 @@ import genanki
 import urllib.request
 import shutil
 import csv
+import subprocess
+import tempfile
 from utils.image_occlusion import batch_generate_image_occlusion_flashcards
 from utils.image_occlusion import cleanup_files
 import settings
@@ -180,34 +182,88 @@ def extract_text_from_pptx(pptx_path):
         print(f"Error reading PowerPoint file: {e}")
         return []
 
-
-def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
-    """Extract all pictures from a PowerPoint file.
-
-    The function now returns a list that has **exactly one entry per slide** so that
-    downstream logic can safely `zip(slide_texts, slide_images)` without running
-    out-of-sync.  Each entry is a list (possibly empty) of image paths extracted
-    from that slide.
+def convert_pptx_to_slide_pngs(pptx_path: str, output_dir: str) -> List[List[str]]:
     """
+    Convert PowerPoint slides to individual PNG images using LibreOffice headless.
+    Returns a list of lists, where each inner list contains PNG paths for that slide.
+    """
+    try:
+        # Create a temporary directory for the conversion
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Convert PPTX to PDF using LibreOffice headless
+            pdf_path = os.path.join(temp_dir, "slides.pdf")
+            cmd = [
+                "libreoffice", "--headless", "--convert-to", "pdf", 
+                "--outdir", temp_dir, pptx_path
+            ]
+            
+            print(f"[DEBUG] Converting PPTX to PDF: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"[WARN] LibreOffice conversion failed: {result.stderr}")
+                return []
+            
+            # Convert PDF to individual PNG images using pdf2image
+            try:
+                from pdf2image import convert_from_path
+                images = convert_from_path(pdf_path, dpi=150)
+                
+                slide_images = []
+                for i, image in enumerate(images):
+                    # Save each slide as PNG
+                    slide_filename = f"slide{i+1}_full.png"
+                    slide_path = os.path.join(output_dir, slide_filename)
+                    image.save(slide_path, "PNG")
+                    
+                    # Add to slide_images list (one image per slide)
+                    slide_images.append([slide_path])
+                    print(f"[DEBUG] Converted slide {i+1} to: {slide_path}")
+                
+                print(f"[DEBUG] Successfully converted {len(slide_images)} slides to PNG")
+                return slide_images
+                
+            except ImportError:
+                print("[WARN] pdf2image not available. Install with: pip install pdf2image")
+                return []
+            except Exception as e:
+                print(f"[WARN] PDF to PNG conversion failed: {e}")
+                return []
+                
+    except Exception as e:
+        print(f"[WARN] Slide conversion failed: {e}")
+        return []
 
+def extract_embedded_images_from_pptx(pptx_path: str, output_dir: str) -> List[List[str]]:
+    """
+    Extract only embedded images from PowerPoint (original function logic).
+    Returns a list of lists, where each inner list contains image paths for that slide.
+    """
     prs = Presentation(pptx_path)
-
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
     slide_images: List[List[str]] = []
 
     for i, slide in enumerate(prs.slides):
         images_for_slide: List[str] = []
+        print(f"[DEBUG] Processing slide {i+1} with {len(slide.shapes)} shapes")
 
         for j, shp in enumerate(slide.shapes):
+            shape_type = getattr(shp, "shape_type", None)
+            has_image_attr = hasattr(shp, "image")
+            print(f"[DEBUG] Slide {i+1}, Shape {j+1}: type={shape_type}, has_image={has_image_attr}")
+            
             # Only process shapes that *have* an image attribute to avoid
             # AttributeError on non-picture shapes (e.g. GraphicFrame)
-            if getattr(shp, "shape_type", None) == 13 and hasattr(shp, "image"):
+            if shape_type == 13 and has_image_attr:
                 try:
                     pic = shp.image  # type: ignore[attr-defined]
                     image_bytes = pic.blob
                     ext = pic.ext
+                    
+                    # Skip unsupported image formats
+                    if ext.lower() in ['wmf', 'emf']:
+                        print(f"⚠️  Skipping unsupported image format on slide {i+1}: {ext}")
+                        continue
+                    
                     img_name = f"slide{i+1}_img{j+1}.{ext}"
                     img_path = os.path.join(output_dir, img_name)
 
@@ -223,11 +279,50 @@ def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
         slide_images.append(images_for_slide)
 
     print(
-        f"Extracted images for {len(slide_images)} slides "
+        f"Extracted embedded images for {len(slide_images)} slides "
         f"(total images: {sum(len(lst) for lst in slide_images)})"
     )
 
     return slide_images
+
+def extract_images_from_pptx(pptx_path, output_dir="slide_images"):
+    """Extract all pictures from a PowerPoint file.
+
+    The function now returns a list that has **exactly one entry per slide** so that
+    downstream logic can safely `zip(slide_texts, slide_images)` without running
+    out-of-sync.  Each entry is a list (possibly empty) of image paths extracted
+    from that slide.
+    """
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # First, try to convert slides to PNG images (captures all content)
+    print("[DEBUG] Converting slides to PNG images...")
+    slide_pngs = convert_pptx_to_slide_pngs(pptx_path, output_dir)
+    
+    # Also extract embedded images as a supplement
+    print("[DEBUG] Extracting embedded images...")
+    embedded_images = extract_embedded_images_from_pptx(pptx_path, output_dir)
+    
+    # Combine both approaches: prefer slide PNGs, fall back to embedded images
+    combined_images = []
+    for i in range(max(len(slide_pngs), len(embedded_images))):
+        slide_images = []
+        
+        # Add slide PNG if available
+        if i < len(slide_pngs) and slide_pngs[i]:
+            slide_images.extend(slide_pngs[i])
+        
+        # Add embedded images if available
+        if i < len(embedded_images) and embedded_images[i]:
+            slide_images.extend(embedded_images[i])
+        
+        combined_images.append(slide_images)
+    
+    total_images = sum(len(lst) for lst in combined_images)
+    print(f"Extracted images for {len(combined_images)} slides (total images: {total_images})")
+    
+    return combined_images
 
 
 def stringify_dict(obj: Any, use_cloze: bool = False) -> str:

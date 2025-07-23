@@ -12,3 +12,4 @@ sentence-transformers==2.5.1
 nltk==3.8.1
 scikit-learn==1.5.2
 numpy==1.26.4
+pdf2image==1.17.0

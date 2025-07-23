@@ -6,7 +6,7 @@ import shutil
 import sys
 import time
 from PIL import Image, ImageDraw
-from utils.image_occlusion import detect_text_regions, mask_regions, make_qmask, make_omask
+from utils.image_occlusion import detect_text_regions, mask_regions, make_qmask, make_omask, config
 import hashlib
 import logging
 
@@ -236,15 +236,131 @@ def run_flashcard_generation(
             else:
                 analysis_data = None
             
+            # If image occlusion is enabled and AI-assisted mode, filter and process relevant images
+            occlusion_flashcards = []
+            total_occlusion_flashcards = 0
+            if enable_image_occlusion and occlusion_mode == "AI-assisted (AI detects labels/regions)" and filtered_slide_images:
+                progress(0.85, desc="Filtering images for relevance...")
+                status_msg = "Filtering images for relevance..."
+                
+                # For image-only mode, skip AI filtering to ensure cards are generated
+                if only_image_occlusion:
+                    print(f"[DEBUG] Image-only mode detected. Skipping AI filtering to ensure card generation.")
+                    relevant_images = filtered_slide_images
+                else:
+                    # Filter images to only include relevant medical/clinical content
+                    try:
+                        relevant_images = filter_relevant_images_for_occlusion(
+                            filtered_slide_images, 
+                            filtered_slide_texts, 
+                            OPENAI_API_KEY, 
+                            MODEL_NAME
+                        )
+                        print(f"[DEBUG] AI filtering completed. Relevant images: {sum(len(images) for images in relevant_images)}")
+                    except Exception as e:
+                        print(f"[DEBUG] AI image filtering failed: {e}. Using all images as fallback.")
+                        # Fallback: use all images if AI filtering fails
+                        relevant_images = filtered_slide_images
+                    
+                    # Check if we have any relevant images after filtering
+                    total_relevant_images = sum(len(images) for images in relevant_images)
+                    if total_relevant_images == 0:
+                        print(f"[DEBUG] No relevant images found after filtering. Using all images as fallback.")
+                        relevant_images = filtered_slide_images
+                
+                # Process relevant images for occlusion
+                progress(0.87, desc="Processing relevant images for occlusion...")
+                status_msg = "Processing relevant images for occlusion..."
+                
+                processed_hashes = set() # Initialize a set to track processed hashes
+                for slide_idx, images in enumerate(relevant_images):
+                    logging.debug(f"[DEBUG] Processing slide {slide_idx + 1} with images: {images}")  # Debug statement to verify images being processed
+                    # Initialize placeholder before iterating
+                    image_path = None
+                    for img_idx, img_path in enumerate(images):
+                        image_path = img_path  # Keep for logging context
+                        try:
+                            # Check if the file is a supported image format
+                            file_ext = os.path.splitext(img_path)[1].lower()
+                            if file_ext in ['.wmf', '.emf']:
+                                logging.debug(f"[DEBUG] Skipping unsupported image format: {img_path} (WMF/EMF not supported by PIL)")
+                                continue
+                            
+                            img = Image.open(img_path).convert("RGB")
+                            # Create occlusion for this image
+                            debug_path = os.path.join(temp_dir, f"debug_slide{slide_idx+1}_img{img_idx+1}_blocks.png")
+                            io_config = config.get("image_occlusion", {})
+                            use_blocks = io_config.get("use_blocks", True)
+                            regions = detect_text_regions(img, conf_threshold=conf_threshold, use_blocks=use_blocks, block_kernel=(25, 5), debug_path=debug_path)
+                            print(f"[DEBUG] Block debug image saved to: {debug_path}")
+                            # Check if regions are empty
+                            if not regions:
+                                logging.debug(f"[DEBUG] No regions detected for image: {img_path}, skipping save.")
+                                continue
+                            # Create a card for EACH detected region
+                            base_rgba = img.convert("RGBA")
+                            for region_idx, region in enumerate(regions[:max_masks_per_image]):
+                                # Ensure uniqueness using region hash
+                                region_hash = hashlib.md5(str(region).encode()).hexdigest()
+                                if region_hash in processed_hashes:
+                                    continue
+                                processed_hashes.add(region_hash)
+                                # Generate masks
+                                qmask_img = make_qmask(img, region)
+                                omask_img = make_omask(img, region)
+                                # Composite overlays
+                                q_overlay = Image.alpha_composite(base_rgba, qmask_img)
+                                o_overlay = Image.alpha_composite(base_rgba, omask_img)
+                                # Unique filenames per region
+                                occ_path = os.path.join(
+                                    temp_dir,
+                                    f"occluded_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
+                                )
+                                om_path = os.path.join(
+                                    temp_dir,
+                                    f"outline_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
+                                )
+                                q_overlay.save(occ_path)
+                                o_overlay.save(om_path)
+                                logging.debug(
+                                    f"[DEBUG] Saved occluded image: {occ_path} (region {region_idx+1}/{len(regions)})"
+                                )
+                                occlusion_flashcards.append({
+                                    "type": "image_occlusion",
+                                    "question_image_path": occ_path,
+                                    "answer_image_path": img_path,  # show original slide on back
+                                })
+                                total_occlusion_flashcards += 1
+                                logging.debug(
+                                    f"✅ Created occlusion dict for slide {slide_idx + 1}, image {img_idx + 1}, region {region_idx + 1}"
+                                )
+                        except Exception as e:
+                            logging.debug(f"⚠️ Error on {img_path}: {e}")
+                            # Continue processing other images even if one fails
+                
+                logging.debug(f"✅ Created {total_occlusion_flashcards} image occlusion flashcards from relevant images")
+            else:
+                print(f"[DEBUG] Image occlusion conditions not met:")
+                print(f"  - enable_image_occlusion: {enable_image_occlusion}")
+                print(f"  - occlusion_mode: {occlusion_mode}")
+                print(f"  - filtered_slide_images: {len(filtered_slide_images) if filtered_slide_images else 0}")
 
+            # The per-image append already occurs inside the loop; no extra append here
+
+            # Merge occlusion flashcards with the main list
+            all_cards_for_export = all_flashcards + occlusion_flashcards
+
+            # Add debug print statement
+            print(f"[DEBUG] Total occlusion flashcards added: {len(occlusion_flashcards)}")
             
-            if not all_flashcards:
+            # Check if we have any cards after all processing
+            if not all_cards_for_export:
                 return "No flashcards were generated. Please check your PowerPoint content.", "No flashcards generated", None
             
             # After quality control, ensure we keep Flashcard objects, not tuples
             # Remove any conversion to (question, answer) tuples after quality control
             # Use the Flashcard objects directly for export
-            flashcard_objs_for_export = all_flashcards
+            flashcard_objs_for_export = all_cards_for_export
             # Only convert to dicts for display/summary, not for export
             # Build concise previews for the UI (skip internal metadata)
             flashcard_previews = []
@@ -265,101 +381,6 @@ def run_flashcard_generation(
 
             # Fallback to stringify_dict for logging/debug, not user display
             all_flashcards_dicts = [stringify_dict(card, use_cloze=use_cloze) for card in flashcard_objs_for_export]
-            
-            # If image occlusion is enabled and AI-assisted mode, filter and process relevant images
-            occlusion_flashcards = []
-            total_occlusion_flashcards = 0
-            if enable_image_occlusion and occlusion_mode == "AI-assisted (AI detects labels/regions)" and filtered_slide_images:
-                progress(0.85, desc="Filtering images for relevance...")
-                status_msg = "Filtering images for relevance..."
-                
-                # Filter images to only include relevant medical/clinical content
-                relevant_images = filter_relevant_images_for_occlusion(
-                    filtered_slide_images, 
-                    filtered_slide_texts, 
-                    OPENAI_API_KEY, 
-                    MODEL_NAME
-                )
-                
-                # Process relevant images for occlusion
-                progress(0.87, desc="Processing relevant images for occlusion...")
-                status_msg = "Processing relevant images for occlusion..."
-                
-                processed_hashes = set() # Initialize a set to track processed hashes
-                for slide_idx, images in enumerate(relevant_images):
-                    logging.debug(f"[DEBUG] Processing slide {slide_idx + 1} with images: {images}")  # Debug statement to verify images being processed
-                    # Initialize placeholder before iterating
-                    image_path = None
-                    for img_idx, img_path in enumerate(images):
-                        image_path = img_path  # Keep for logging context
-                        try:
-                            img = Image.open(img_path).convert("RGB")
-                            # Create occlusion for this image
-                            occluded_path = os.path.join(temp_dir, f"occluded_slide{slide_idx+1}_img{img_idx+1}.png")
-
-                            # Open and process the image
-                            regions = detect_text_regions(img, conf_threshold=conf_threshold)
-
-                            # Check if regions are empty
-                            if not regions:
-                                logging.debug(f"[DEBUG] No regions detected for image: {img_path}, skipping save.")
-                                continue
-
-                            # Create a card for EACH detected region
-                            base_rgba = img.convert("RGBA")
-                            for region_idx, region in enumerate(regions[:max_masks_per_image]):
-                                # Ensure uniqueness using region hash
-                                region_hash = hashlib.md5(str(region).encode()).hexdigest()
-                                if region_hash in processed_hashes:
-                                    continue
-                                processed_hashes.add(region_hash)
-
-                                # Generate masks
-                                qmask_img = make_qmask(img, region)
-                                omask_img = make_omask(img, region)
-
-                                # Composite overlays
-                                q_overlay = Image.alpha_composite(base_rgba, qmask_img)
-                                o_overlay = Image.alpha_composite(base_rgba, omask_img)
-
-                                # Unique filenames per region
-                                occ_path = os.path.join(
-                                    temp_dir,
-                                    f"occluded_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
-                                )
-                                om_path = os.path.join(
-                                    temp_dir,
-                                    f"outline_slide{slide_idx+1}_img{img_idx+1}_reg{region_idx+1}.png"
-                                )
-
-                                q_overlay.save(occ_path)
-                                o_overlay.save(om_path)
-
-                                logging.debug(
-                                    f"[DEBUG] Saved occluded image: {occ_path} (region {region_idx+1}/{len(regions)})"
-                                )
-
-                                occlusion_flashcards.append({
-                                    "type": "image_occlusion",
-                                    "question_image_path": occ_path,
-                                    "answer_image_path": img_path,  # show original slide on back
-                                })
-                                total_occlusion_flashcards += 1
-                                logging.debug(
-                                    f"✅ Created occlusion dict for slide {slide_idx + 1}, image {img_idx + 1}, region {region_idx + 1}"
-                                )
-                        except Exception as e:
-                            logging.debug(f"⚠️ Error on {img_path}: {e}")
-                
-                logging.debug(f"✅ Created {total_occlusion_flashcards} image occlusion flashcards from relevant images")
-            
-            # The per-image append already occurs inside the loop; no extra append here
-
-            # Merge occlusion flashcards with the main list
-            all_cards_for_export = flashcard_objs_for_export + occlusion_flashcards
-
-            # Add debug print statement
-            print(f"[DEBUG] Total occlusion flashcards added: {len(occlusion_flashcards)}")
 
             # --------------------
             # DE-DUPLICATE CARDS
@@ -457,6 +478,13 @@ def run_flashcard_generation(
             
     except Exception as e:
         error_msg = f"Error during processing: {str(e)}"
+        
+        # Provide more specific error messages for common issues
+        if "cannot find loader" in str(e).lower() and ("wmf" in str(e).lower() or "emf" in str(e).lower()):
+            error_msg = "Some images in your PowerPoint are in WMF/EMF format which are not supported. The system will skip these images and continue processing the supported ones."
+        elif "cannot find loader" in str(e).lower():
+            error_msg = "Some images in your PowerPoint are in an unsupported format. The system will skip these images and continue processing the supported ones."
+        
         return error_msg, f"❌ Error: {str(e)}", None
 
 # Create the Gradio interface
@@ -681,12 +709,22 @@ if __name__ == "__main__":
         print("Please create a .env file with your OpenAI API key:")
         print("OPENAI_API_KEY=your_api_key_here")
         sys.exit(1)
-    
+
+    # Allow server_port override via CLI or env
+    port = int(os.environ.get("GRADIO_SERVER_PORT", 7862))
+    for arg in sys.argv:
+        if arg.startswith("--server_port"):
+            parts = arg.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                port = int(parts[1])
+            elif '=' in arg:
+                port = int(arg.split('=')[1])
+
     # Create and launch the interface
     interface = create_interface()
     interface.launch(
         server_name="0.0.0.0",
-        server_port=7862,
+        server_port=port,
         share=True,
         debug=True
     ) 
