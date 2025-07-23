@@ -273,3 +273,4 @@ anki-flashcard-generator/
 5. Write unit tests for `extract_text`, `generate_masks`, etc.
 6. Suggest a go-to-market plan for beta testing among UK medical students.
 
+📄 For full UI setup and usage instructions, see [UI_README.md](./UI_README.md)
