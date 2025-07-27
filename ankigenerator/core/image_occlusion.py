@@ -295,7 +295,59 @@ def batch_generate_image_occlusion_flashcards(
         # Use higher confidence threshold (default now 50 via config)
         io_config = config.get("image_occlusion", {})
         use_blocks = io_config.get("use_blocks", True)
-        regions = detect_text_regions(image, conf_threshold=conf_threshold, use_blocks=use_blocks)
+        # If requested, attempt Google Cloud Vision OCR for region detection.  This
+        # branch falls back to the existing Tesseract-based pipeline on any
+        # exception or if use_google_vision is False.  When using Google
+        # Vision, we extract bounding boxes from the returned annotations and
+        # convert them into (x, y, w, h) tuples.  The first element of
+        # `text_annotations` in the response contains the entire text and
+        # should be skipped.
+        if use_google_vision:
+            try:
+                from google.cloud import vision  # type: ignore
+
+                # Initialise a Vision client.  Use an explicit credentials file if
+                # provided; otherwise rely on default environment credentials.
+                if credentials_path:
+                    client = vision.ImageAnnotatorClient.from_service_account_file(credentials_path)  # type: ignore[attr-defined]
+                else:
+                    client = vision.ImageAnnotatorClient()  # type: ignore[call-arg]
+
+                # Read the image file and send it to Google Vision for text detection
+                with open(img_path, "rb") as img_file:
+                    content = img_file.read()
+                gvision_image = vision.Image(content=content)  # type: ignore[attr-defined]
+                response = client.text_detection(image=gvision_image)  # type: ignore[call-arg]
+
+                # Parse bounding boxes from the annotations, skipping the first
+                # annotation (which represents the entire text block)
+                g_regions: List[Tuple[int, int, int, int]] = []
+                annotations = response.text_annotations or []  # type: ignore[attr-defined]
+                for annotation in annotations[1:]:
+                    # Each annotation has a bounding_poly with vertices. Some
+                    # vertices may be None if the API omits them; guard against
+                    # missing x/y values by defaulting to zero.
+                    verts = annotation.bounding_poly.vertices  # type: ignore[attr-defined]
+                    xs = [v.x or 0 for v in verts]
+                    ys = [v.y or 0 for v in verts]
+                    x0, y0 = min(xs), min(ys)
+                    x1, y1 = max(xs), max(ys)
+                    g_regions.append((x0, y0, x1 - x0, y1 - y0))
+
+                # Respect the max_masks parameter by limiting the number of
+                # returned regions.  If more regions are detected than
+                # max_masks, select the top ones by area (largest first).
+                if g_regions:
+                    # Sort by area descending and slice to max_masks
+                    g_regions.sort(key=lambda r: r[2] * r[3], reverse=True)
+                    regions = g_regions[:max_masks]
+                else:
+                    regions = []
+            except Exception as e:
+                print(f"[DEBUG] Google Vision OCR failed ({e}); falling back to Tesseract")
+                regions = detect_text_regions(image, conf_threshold=conf_threshold, use_blocks=use_blocks)
+        else:
+            regions = detect_text_regions(image, conf_threshold=conf_threshold, use_blocks=use_blocks)
         print(f"[DEBUG] Regions for {img_path}: {regions}")
         # Always save a debug overlay image, even if regions is empty
         debug_img_path = os.path.join(export_dir, f"{os.path.splitext(os.path.basename(img_path))[0]}_debug_detected_regions.png")
