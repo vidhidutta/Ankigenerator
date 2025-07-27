@@ -31,7 +31,7 @@ FORCE_MASK_DEBUG = True  # Set to True to force a visible mask for debugging
 
 # Update make_qmask to use the debug color if enabled
 def make_qmask(image: Image.Image, region: Tuple[int, int, int, int]) -> Image.Image:
-    """Return an RGBA mask with a semi-opaque red fill over the region, or bright green if FORCE_MASK_DEBUG."""
+    """Return an RGBA mask with a semi‑opaque red fill over the region, or bright green if FORCE_MASK_DEBUG."""
     mask = Image.new("RGBA", image.size, (0, 0, 0, 0))  # type: ignore[arg-type]
     draw = ImageDraw.Draw(mask)
     x, y, w, h = region
@@ -54,14 +54,14 @@ def make_omask(image: Image.Image, region: Tuple[int, int, int, int]) -> Image.I
     return mask
 
 # -----------------------------
-# File-cleanup helper
+# File‑cleanup helper
 # -----------------------------
 
 from typing import List
 
 
 def cleanup_files(file_paths: List[str]):
-    """Delete each file in the list if it exists (best-effort)."""
+    """Delete each file in the list if it exists (best‑effort)."""
     for path in file_paths:
         try:
             if path and os.path.exists(path):
@@ -90,10 +90,10 @@ ignore_nonsemantic_chars = config.get('ignore_nonsemantic_chars', True)
 # Percentage padding (horizontal & vertical) to expand each OCR box before masking
 region_expand_pct = config.get('region_expand_pct', 0.3)
 
-# Load optional fine-tuning parameters for more precise masking
+# Load optional fine‑tuning parameters for more precise masking
 max_masks_per_image = config.get('max_masks_per_image', 6)
 # Horizontal pixel gap under which separate OCR boxes will be merged.
-# A lower value prevents large multi-cell merges in tables.
+# A lower value prevents large multi‑cell merges in tables.
 merge_x_gap_tol = config.get('merge_x_gap_tol', 20)
 
 # Load image occlusion specific configuration if available
@@ -131,7 +131,7 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks
     if enable_semantic_masking:
         # --- Experimental semantic masking pipeline ---
         print("[DEBUG] Experimental semantic masking mode enabled.")
-        # TODO: Implement line-level OCR extraction, semantic chunking, and region unioning here.
+        # TODO: Implement line‑level OCR extraction, semantic chunking, and region unioning here.
         # For now, just return an empty list as a placeholder.
         return []
     ocr_data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
@@ -173,7 +173,7 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks
     # Debug log
     print(f"[DEBUG] OCR words: {len(ocr_boxes)}")
     if use_blocks:
-        # --- Block-level detection ---
+        # --- Block‑level detection ---
         blocks = detect_text_blocks_cv(
             image,
             kernel_size=(morph_kernel_width, morph_kernel_height),
@@ -183,7 +183,7 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks
         )
         print(f"[DEBUG] Morphology blocks: {len(blocks)}")
         merged_blocks = merge_ocr_boxes_into_blocks(ocr_boxes, blocks)
-        print(f"[DEBUG] Merged into {len(merged_blocks)} block-level regions.")
+        print(f"[DEBUG] Merged into {len(merged_blocks)} block‑level regions.")
         if len(merged_blocks) == 0:
             # Fallback: cluster OCR boxes
             print("[DEBUG] Morphology produced zero blocks, falling back to OCR clustering.")
@@ -196,15 +196,15 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks
             )
             print(f"[DEBUG] OCR clusters: {len(clusters)}")
             print("[DEBUG] Fallback used: OCR clustering")
-            # Post-process clusters
+            # Post‑process clusters
             post_clusters = postprocess_blocks(clusters)
-            print(f"[DEBUG] Post-processed clusters: {len(post_clusters)}")
+            print(f"[DEBUG] Post‑processed clusters: {len(post_clusters)}")
             return post_clusters
         else:
             print("[DEBUG] Fallback not needed: morphology blocks used")
-            # Post-process merged blocks
+            # Post‑process merged blocks
             post_blocks = postprocess_blocks(merged_blocks)
-            print(f"[DEBUG] Post-processed blocks: {len(post_blocks)}")
+            print(f"[DEBUG] Post‑processed blocks: {len(post_blocks)}")
             return post_blocks
     else:
         return ocr_boxes
@@ -263,8 +263,27 @@ def draw_debug_boxes(image: Image.Image, regions: List[Tuple[int, int, int, int]
     print(f"Saving debug image to: {output_path}")
 
 
+def batch_generate_image_occlusion_flashcards(
+    image_paths,
+    export_dir,
+    conf_threshold: int = 70,
+    max_masks: int = 3,
+    use_google_vision: bool = False,
+    credentials_path: str | None = None,
+) -> List[Dict]:
+    """Generate image occlusion flashcards for a batch of images.
 
-def batch_generate_image_occlusion_flashcards(image_paths, export_dir, conf_threshold=60, max_masks=10, mask_method='rectangle'):
+    Args:
+        image_paths (List[str]): paths to the input images.
+        export_dir (str): directory to save the generated flashcards.
+        conf_threshold (int, optional): minimum OCR confidence threshold. Defaults to 70.
+        max_masks (int, optional): maximum number of masks per image. Defaults to 3.
+        use_google_vision (bool, optional): whether to use Google Cloud Vision for OCR. Defaults to False.
+        credentials_path (str|None, optional): path to the Google Cloud credentials JSON. Defaults to None.
+
+    Returns:
+        List[Dict]: a list of flashcard metadata entries.
+    """
     # Ensure the export directory exists before writing any files
     os.makedirs(export_dir, exist_ok=True)
     flashcard_entries = []
@@ -390,10 +409,10 @@ export_dir = os.path.expanduser('~/anki-flashcard-generator/debug_images')
 
 # --- Helper: detect likely header text vs data cell ---
 def _looks_like_header(txt: str, y: int, img_h: int) -> bool:
-    """Return True for obvious headers (ALL-CAPS at top row, short & alpha, etc.)."""
+    """Return True for obvious headers (ALL‑CAPS at top row, short & alpha, etc.)."""
     txt_stripped = txt.strip()
 
-    # NEW RULE: treat any ALL-CAPS string of ≤3 words as a header (regardless of position)
+    # NEW RULE: treat any ALL‑CAPS string of ≤3 words as a header (regardless of position)
     if txt_stripped.isupper() and len(txt_stripped.split()) <= 3:
         return True
 
@@ -404,11 +423,11 @@ def _looks_like_header(txt: str, y: int, img_h: int) -> bool:
 
 
 def pick_best_snippet_via_llm(regions, texts, img_size):
-    """Use an LLM (GPT-4o-mini) to choose which snippet to mask.
+    """Use an LLM (GPT‑4o‑mini) to choose which snippet to mask.
 
     Args:
         regions (List[Tuple[int,int,int,int]]): bounding boxes for candidate snippets.
-        texts   (List[str]): OCR-extracted text corresponding to each region.
+        texts   (List[str]): OCR‑extracted text corresponding to each region.
         img_size (Tuple[int,int]): (width, height) of the source image.
 
     Returns:
@@ -490,7 +509,7 @@ def pick_best_snippet_via_llm(regions, texts, img_size):
     print("[DEBUG] GPT raw reply:", txt)
     print("[DEBUG] Candidate list AFTER filter:", texts)
     print("[DEBUG] Index chosen:", best_i)
-    print("[DEBUG] LLM chose:", texts[best_i] if texts else "<none>")
+    print("[DEBUG] LLM chose:", texts[best_i] if texts else " ")
 
     # previous concise debug kept for compatibility (optional)
     # print(f"[DEBUG] LLM chose index {best_i} → {texts[best_i]}")
@@ -529,11 +548,11 @@ def detect_text_blocks_cv(image: Image.Image, kernel_size: tuple = (25, 25), min
             blocks.append((x, y, w, h))
     # Save debug image
     if debug_path:
-        import os
-        debug_dir = os.path.join(os.path.dirname(__file__), '..', 'debug_images')
-        os.makedirs(debug_dir, exist_ok=True)
-        debug_filename = os.path.basename(debug_path)
-        debug_save_path = os.path.join(debug_dir, debug_filename)
+        import os as _os
+        debug_dir = _os.path.join(_os.path.dirname(__file__), '..', 'debug_images')
+        _os.makedirs(debug_dir, exist_ok=True)
+        debug_filename = _os.path.basename(debug_path)
+        debug_save_path = _os.path.join(debug_dir, debug_filename)
         debug_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         for (x, y, w, h) in blocks:
             color = (0, 255, 0) if FORCE_MASK_DEBUG else (0, 0, 255)
@@ -565,11 +584,11 @@ def cluster_ocr_boxes(ocr_boxes, eps: int = 50, min_samples: int = 1, debug_path
         merged.append((x0, y0, x1-x0, y1-y0))
     # Debug overlay
     if debug_path and image is not None:
-        import os
-        debug_dir = os.path.join(os.path.dirname(__file__), '..', 'debug_images')
-        os.makedirs(debug_dir, exist_ok=True)
-        debug_filename = os.path.basename(debug_path).replace('.png', '_cluster.png')
-        debug_save_path = os.path.join(debug_dir, debug_filename)
+        import os as _os
+        debug_dir = _os.path.join(_os.path.dirname(__file__), '..', 'debug_images')
+        _os.makedirs(debug_dir, exist_ok=True)
+        debug_filename = _os.path.basename(debug_path).replace('.png', '_cluster.png')
+        debug_save_path = _os.path.join(debug_dir, debug_filename)
         img = np.array(image.convert('RGB'))
         for (x, y, w, h) in merged:
             color = (0, 255, 0) if FORCE_MASK_DEBUG else (255, 0, 0)
@@ -627,7 +646,7 @@ def merge_ocr_boxes_into_blocks(ocr_boxes, blocks):
 
 def postprocess_blocks(blocks):
     """
-    Post-process block list:
+    Post‑process block list:
     - Merge any two boxes whose IoU > iou_merge_thresh or centroids within centroid_merge_dist
     - Drop any block with area < min_block_area
     - Only merge boxes in same row/col if their centers align within table_merge_band
@@ -679,5 +698,5 @@ def postprocess_blocks(blocks):
     dropped = len(merged) - len(filtered)
     if dropped > 0:
         print(f"[DEBUG] Dropped {dropped} blocks with area < {min_block_area}")
-    print(f"[DEBUG] Final block count after post-processing: {len(filtered)}")
+    print(f"[DEBUG] Final block count after post‑processing: {len(filtered)}")
     return filtered
