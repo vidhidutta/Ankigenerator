@@ -268,7 +268,7 @@ def batch_generate_image_occlusion_flashcards(
     export_dir,
     conf_threshold: int = 70,
     max_masks: int = 3,
-    use_google_vision: bool = False,
+    use_google_vision: bool = True,  # Default to Google Vision API
     credentials_path: str | None = None,
 ) -> List[Dict]:
     """Generate image occlusion flashcards for a batch of images.
@@ -295,6 +295,10 @@ def batch_generate_image_occlusion_flashcards(
         # Use higher confidence threshold (default now 50 via config)
         io_config = config.get("image_occlusion", {})
         use_blocks = io_config.get("use_blocks", True)
+        use_google_vision = io_config.get("use_google_vision", True)  # Default to Google Vision
+        credentials_path = io_config.get("google_credentials_path", "~/anki-flashcard-generator/google_credentials.json")
+        
+        # Try Google Vision API first, fallback to Tesseract if it fails
         # If requested, attempt Google Cloud Vision OCR for region detection.  This
         # branch falls back to the existing Tesseract-based pipeline on any
         # exception or if use_google_vision is False.  When using Google
@@ -359,7 +363,14 @@ def batch_generate_image_occlusion_flashcards(
         for idx, region in enumerate(regions):
             area = region[2] * region[3]
             img_area = image.width * image.height
-            if area / img_area < 0.005 or area / img_area > 0.3:
+            area_ratio = area / img_area
+            
+            # Use different area thresholds for Google Vision vs Tesseract
+            min_area_ratio = 0.002 if use_google_vision else 0.005  # Lower threshold for Google Vision
+            max_area_ratio = 0.3
+            
+            if area_ratio < min_area_ratio or area_ratio > max_area_ratio:
+                print(f"[DEBUG] Skipping region {idx}: area_ratio={area_ratio:.4f} (min={min_area_ratio}, max={max_area_ratio})")
                 continue
             files_to_cleanup = []
             try:

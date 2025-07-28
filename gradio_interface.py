@@ -458,11 +458,17 @@ def run_flashcard_generation(
                     label="Max Masks per Image"
                 )
                 # Update the call to batch_generate_image_occlusion_flashcards
+                # Get Google Vision credentials path from config
+                io_config = config.get("image_occlusion", {})
+                credentials_path = io_config.get("google_credentials_path", "~/anki-flashcard-generator/google_credentials.json")
+                
                 flashcard_entries = batch_generate_image_occlusion_flashcards(
                     image_paths,
                     os.path.join(temp_dir, "occlusion_flashcards"),
                     conf_threshold=conf_threshold,
-                    mask_method='rectangle'
+                    max_masks=max_masks_slider.value,
+                    use_google_vision=True,  # Use Google Vision API by default
+                    credentials_path=os.path.expanduser(credentials_path)
                 )
                 logging.debug(f"[DEBUG] Generated flashcard entries: {flashcard_entries}")  # Debug statement to verify flashcard entries
             else:
@@ -635,6 +641,9 @@ def create_interface():
             # If no card types selected, default to Basic
             if not card_type:
                 card_type = ["Basic"]
+            
+            # Determine OCR method based on user choice
+            use_google_vision = "Google Vision API" in ocr_method
             
             return run_flashcard_generation(
                 pptx_file,
