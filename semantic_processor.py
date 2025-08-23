@@ -64,11 +64,26 @@ class SemanticProcessor:
         Clean and normalize text for processing
         
         Args:
-            text: Raw text to clean
+            text: Raw text to clean (can be string or dict)
             
         Returns:
             Cleaned text
         """
+        # Handle case where text is a dict
+        if isinstance(text, dict):
+            # Extract text content from dict
+            if 'text' in text:
+                text = text['text']
+            elif 'content' in text:
+                text = text['content']
+            else:
+                # Convert dict to string representation
+                text = str(text)
+        
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text)
+        
         # Remove slide headers
         text = re.sub(r'^Slide \d+:\s*', '', text)
         
@@ -329,9 +344,44 @@ class SemanticProcessor:
         Returns:
             Enhanced prompt with context
         """
-        chunk_text = chunk_data['text']
-        key_phrases = chunk_data['key_phrases']
-        related_slides = chunk_data['related_slides']
+        try:
+            # Ensure chunk_data is not accidentally a dict itself
+            if isinstance(chunk_data, dict) and 'text' in chunk_data:
+                # Normal case: chunk_data is a dict with 'text' key
+                chunk_text = chunk_data.get('text', '')
+            else:
+                # Fallback: chunk_data might be the text itself
+                chunk_text = str(chunk_data) if chunk_data else ''
+            
+            # Ensure chunk_text is a string
+            if isinstance(chunk_text, dict):
+                chunk_text = str(chunk_text)
+            elif not isinstance(chunk_text, str):
+                chunk_text = str(chunk_text)
+            
+            print(f"[DEBUG] build_enhanced_prompt: chunk_text type={type(chunk_text)}, length={len(str(chunk_text))}")
+        except Exception as e:
+            print(f"[ERROR] build_enhanced_prompt error: {e}")
+            print(f"[ERROR] chunk_data type: {type(chunk_data)}")
+            print(f"[ERROR] chunk_data content: {chunk_data}")
+            raise
+        
+        # Ensure key_phrases is a list of strings
+        if isinstance(chunk_data, dict):
+            key_phrases = chunk_data.get('key_phrases', [])
+            related_slides = chunk_data.get('related_slides', [])
+        else:
+            # Fallback for non-dict chunk_data
+            key_phrases = []
+            related_slides = []
+        
+        if not isinstance(key_phrases, list):
+            key_phrases = []
+        key_phrases = [str(phrase) for phrase in key_phrases if phrase]
+        
+        if not isinstance(related_slides, list):
+            related_slides = []
+        related_slides = [str(slide) for slide in related_slides if slide]
         
         # Build context information
         context_parts = []
@@ -343,10 +393,15 @@ class SemanticProcessor:
             # Extract key information from related slides
             related_context = []
             for i, related_slide in enumerate(related_slides[:2]):  # Limit to 2 related slides
-                # Extract first sentence or key phrase
-                sentences = sent_tokenize(self.clean_text(related_slide))
-                if sentences:
-                    related_context.append(f"Related slide {i+1}: {sentences[0][:100]}...")
+                try:
+                    # Extract first sentence or key phrase
+                    sentences = sent_tokenize(self.clean_text(related_slide))
+                    if sentences:
+                        related_context.append(f"Related slide {i+1}: {sentences[0][:100]}...")
+                except Exception as e:
+                    # If processing fails, skip this slide
+                    print(f"Warning: Could not process related slide {i+1}: {e}")
+                    continue
             
             if related_context:
                 context_parts.append("Related content from similar slides:\n" + "\n".join(related_context))

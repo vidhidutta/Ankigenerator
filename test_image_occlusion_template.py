@@ -142,11 +142,13 @@ def test_image_occlusion_template():
         
         # Create alternative template
         print("\n4. Alternative Template (Simpler):")
-        alternative_template = f"""
-{{{{#{fld['image']}}}}}
-<div id=\"io-header\">{{{{{fld['header']}}}}}</div>
-<div id=\"io-wrapper\">\n  <div id=\"io-overlay\">\n    <img src=\"{{{{{fld['qmask']}}}}}\" alt=\"Question\">\n  </div>\n  <div id=\"io-original\" style=\"display: none;\">\n    <img src=\"{{{{{fld['image']}}}}}\" alt=\"Answer\">\n  </div>\n</div>\n<div id=\"io-footer\">{{{{{fld['footer']}}}}}</div>\n<script>\n// Simple toggle on click\ndocument.getElementById('io-wrapper').addEventListener('click', function() {\n  var overlay = document.getElementById('io-overlay');\n  var original = document.getElementById('io-original');\n  if (overlay.style.display !== 'none') {\n    overlay.style.display = 'none';\n    original.style.display = 'block';\n  } else {\n    overlay.style.display = 'block';\n    original.style.display = 'none';\n  }\n});\n</script>\n{{{{/{fld['image']}}}}}
+        alternative_template = """
+{{{{#{image}}}}}
+<div id=\"io-header\">{{{{header}}}}}</div>
+<div id=\"io-wrapper\">\n  <div id=\"io-overlay\">\n    <img src=\"{{{{qmask}}}}\" alt=\"Question\">\n  </div>\n  <div id=\"io-original\" style=\"display: none;\">\n    <img src=\"{{{{image}}}}\" alt=\"Answer\">\n  </div>\n</div>\n<div id=\"io-footer\">{{{{footer}}}}}</div>\n<script>\n// Simple toggle on click\ndocument.getElementById('io-wrapper').addEventListener('click', function() {\n  var overlay = document.getElementById('io-overlay');\n  var original = document.getElementById('io-original');\n  if (overlay.style.display !== 'none') {\n    overlay.style.display = 'none';\n    original.style.display = 'block';\n  } else {\n    overlay.style.display = 'block';\n    original.style.display = 'none';\n  }\n});\n</script>\n{{{{/{image}}}}}
 """
+        # Simple token replacement
+        alternative_template = alternative_template.replace('{image}', fld['image']).replace('{header}', fld['header']).replace('{qmask}', fld['qmask']).replace('{footer}', fld['footer'])
         print(alternative_template)
         
         return output_path

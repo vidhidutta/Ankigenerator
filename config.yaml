@@ -49,7 +49,10 @@ image_occlusion:
   use_blocks: false  # opt-in block-level merging for text regions
   # Google Vision API Configuration
   use_google_vision: true  # Set to true to use Google Vision API instead of Tesseract
-  google_credentials_path: "~/anki-flashcard-generator/google_credentials.json"  # Path to service account JSON
+  google_credentials_path: "/home/vidhidutta/anki-flashcard-generator/google_credentials.json"  # Path to service account JSON
+  
+  # Adaptive AI Configuration
+  enable_adaptive_config: true  # AI automatically adjusts parameters based on image analysis
   # --- Block detection refinements ---
   morph_kernel_width: 25   # Morphology kernel width (default 25)
   morph_kernel_height: 25  # Morphology kernel height (default 25)
@@ -98,13 +101,71 @@ quality_control:
     patterns:
       - numbers_percentages
       - acronyms
-      - definitions
-      - lists
-    max_blanks: 3
   context_enrichment:
     enabled: true
     level_1_minimal_context: true
     level_2_reasoning_required: true
+
+# Audio Processing Configuration
+audio_processing:
+  clip_min_s: 4.0
+  clip_max_s: 15.0
+  clip_duration_tolerance_s: 0.25
+  sample_rate: 16000
+  allow_long_audio: true
+  # Learning-based auto clip selection
+  learning:
+    enabled: true
+    algorithm: "linucb"
+    exploration_alpha: 0.2
+    min_clip_s: 5
+    max_clip_s: 15
+    base_target_s: 7
+    overflow_max_s: 1.0
+    pause_min_ms: 250
+    weight:
+      semantic: 0.6
+      keyword: 0.3
+      emphasis: 0.1
+    feature_scaling: true
+    privacy:
+      opt_in_default: true
+      store_path: "~/.anki_audio/learn_state.json"
+      hash_salt_env: "ANKI_AUDIO_SALT"
+  enabled: true
+  whisper_model: "tiny.en"  # fastest on CPU; alternatives: tiny, base, small, medium, large
+  emphasis_detection:
+    enabled: true
+    pitch_weight: 0.4
+    volume_weight: 0.4
+    rate_weight: 0.2
+    emphasis_threshold: 0.7
+  alignment:
+    method: "content_based"  # content_based, timing_based
+    keyword_overlap_threshold: 1
+  weighting:
+    time_allocation_weight: 0.4
+    emphasis_weight: 0.4
+    confidence_weight: 0.2
+    max_weight_multiplier: 2.0
+  supported_formats:
+    - ".mp3"
+    - ".wav"
+    - ".m4a"
+    - ".flac"
+  # Audio-to-Flashcard Chunking Configuration
+  chunking:
+    enabled: true
+    chunk_overlap: 0.3  # 30% overlap between chunks for context continuity
+    min_chunk_length: 10  # Minimum seconds for a chunk
+    max_chunk_length: 60  # Maximum seconds for a chunk
+    emphasis_threshold: 0.7  # Minimum emphasis score to consider chunk worthy
+    min_confidence: 0.8  # Minimum Whisper confidence for chunk inclusion
+    batch_size: 3  # Number of chunks to process together for context
+    quality_filters:
+      min_words_per_chunk: 5  # Minimum words for a valid chunk
+      max_silence_ratio: 0.5  # Maximum silence ratio in chunk
+      require_medical_terms: true  # Only include chunks with medical terminology
 
 # Enhanced Prompt Template with Quality Control
 prompt_template: |
@@ -259,4 +320,17 @@ max_region_area_ratio: 0.2
 max_region_width_ratio: 0.7
 max_region_height_ratio: 0.7
 min_text_length: 4
-ignore_nonsemantic_chars: true 
+ignore_nonsemantic_chars: true
+
+# Image Understanding / VLM Configuration
+image_understanding:
+  enabled: true
+  vlm: "qwen2-vl"  # options: qwen2-vl, llava-onevision, cloud
+  max_masks_per_image: 6
+  min_mask_area_px: 900
+  detection_threshold: 0.25
+  nms_iou_threshold: 0.5
+  use_ocr_preprocess: true
+  keep_image_only_slides: true
+  candidate_terms_topk: 30
+  show_rationale_on_back: true 

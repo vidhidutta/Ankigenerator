@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+image.png#!/usr/bin/env python3
 """
 Test script for image occlusion export functionality
 """
@@ -7,7 +7,7 @@ import os
 import tempfile
 from PIL import Image, ImageDraw
 from flashcard_generator import export_flashcards_to_apkg, Flashcard
-from utils.image_occlusion import (
+from ankigenerator.core.image_occlusion import (
     detect_text_regions,
     mask_regions,
     generate_occlusion_flashcard_entry,
@@ -15,14 +15,33 @@ from utils.image_occlusion import (
     config
 )
 
+def ensure_complex_test_image(path: str = 'complex_test_image.png') -> str:
+    """Ensure a test image exists; create a synthetic one if missing."""
+    import os
+    if os.path.exists(path):
+        return path
+    img = Image.new('RGB', (1000, 700), color='white')
+    d = ImageDraw.Draw(img)
+    # Draw multiple text blocks and shapes to simulate a complex slide
+    d.rectangle([50, 50, 950, 120], outline='black', width=2)
+    d.text((60, 70), "Pharmacology of Beta Blockers", fill='black')
+    d.text((60, 160), "Mechanism: Beta-1 receptor blockade", fill='black')
+    d.text((60, 200), "Indications: Hypertension, Angina", fill='black')
+    d.text((60, 240), "Side effects: Bradycardia, Fatigue", fill='black')
+    d.rectangle([55, 300, 500, 500], outline='red', width=3)
+    d.text((65, 320), "Clinical Case: 45-year-old with HTN", fill='black')
+    img.save(path)
+    return path
+
 def create_test_image_occlusion_cards():
     """Create test image occlusion flashcards"""
     
-    # Load the complex test image
-    img = Image.open('complex_test_image.png')
+    # Load or create the complex test image
+    original_path = ensure_complex_test_image('complex_test_image.png')
+    img = Image.open(original_path)
     
-    # Save original image
-    original_path = "complex_test_image.png"
+    # Save original image path
+    # original_path already set
     
     # Detect regions and create occluded version
     io_config = config.get("image_occlusion", {})
@@ -40,8 +59,8 @@ def create_test_image_occlusion_cards():
     test_cards = [
         # Image occlusion flashcard
         {
-            "question_img": occluded_path,
-            "answer_img": original_path,
+            "question_image_path": occluded_path,
+            "answer_image_path": original_path,
             "type": "image_occlusion",
             "alt_text": "What text is hidden here?"
         }
@@ -77,8 +96,9 @@ def test_occlusion_utility_functions():
     print("\n🧪 Testing image occlusion utility functions...")
     
     try:
-        # Load the complex test image
-        img = Image.open('complex_test_image.png')
+        # Load or create the complex test image
+        img_path = ensure_complex_test_image('complex_test_image.png')
+        img = Image.open(img_path)
         
         # Test region detection with the complex image
         io_config = config.get("image_occlusion", {})

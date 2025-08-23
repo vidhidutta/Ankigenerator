@@ -125,7 +125,113 @@ if 'image_occlusion' in config:
 def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks: bool = True, block_kernel: tuple = (25, 25), debug_path: str = None) -> List[Tuple[int, int, int, int]]:
     io_config = config.get('image_occlusion', {})
     enable_semantic_masking = io_config.get('enable_semantic_masking', False)
-    print(f"[DEBUG] Executing detect_text_regions with conf_threshold: {conf_threshold}, use_blocks={use_blocks}, enable_semantic_masking={enable_semantic_masking}")
+    use_google_vision = io_config.get('use_google_vision', False)
+    enable_adaptive_config = io_config.get('enable_adaptive_config', True)
+    
+    print(f"[DEBUG] Executing detect_text_regions with conf_threshold: {conf_threshold}, use_blocks={use_blocks}, enable_semantic_masking={enable_semantic_masking}, use_google_vision={use_google_vision}, enable_adaptive_config={enable_adaptive_config}")
+    
+    # Apply adaptive configuration if enabled
+    if enable_adaptive_config:
+        try:
+            from providers.adaptive_config_provider import create_adaptive_config_provider
+            
+            # Save image temporarily for analysis
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                image.save(tmp_file.name)
+                tmp_path = tmp_file.name
+            
+            try:
+                # Get adaptive configuration
+                adaptive_provider = create_adaptive_config_provider()
+                base_config = {
+                    'conf_threshold': conf_threshold,
+                    'use_blocks': use_blocks,
+                    'min_region_area': io_config.get('min_region_area', 150),
+                    'max_masks_per_image': io_config.get('max_masks_per_image', 6),
+                    'merge_x_gap_tol': io_config.get('merge_x_gap_tol', 20),
+                    'dbscan_eps': io_config.get('dbscan_eps', 50),
+                    'region_expand_pct': io_config.get('region_expand_pct', 0.4),
+                    'morph_kernel_width': io_config.get('morph_kernel_width', 25),
+                    'morph_kernel_height': io_config.get('morph_kernel_height', 25)
+                }
+                
+                optimized_config = adaptive_provider.analyze_image_and_optimize_config(tmp_path, base_config)
+                
+                # Apply optimized parameters
+                conf_threshold = optimized_config.get('conf_threshold', conf_threshold)
+                use_blocks = optimized_config.get('use_blocks', use_blocks)
+                
+                print(f"[DEBUG] Adaptive config applied: {optimized_config}")
+                
+                # Clean up temp file
+                os.unlink(tmp_path)
+                
+            except Exception as e:
+                print(f"[WARN] Adaptive config failed: {e}, using base parameters")
+                # Clean up temp file
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+        except ImportError:
+            print("[DEBUG] Adaptive config provider not available, using base parameters")
+    
+    # Try Google Medical Vision AI first if enabled
+    if use_google_vision:
+        try:
+            import os
+            from providers.medical_vision_provider import create_medical_vision_provider
+            
+            # Check if credentials are available
+            credentials_path = io_config.get('google_credentials_path')
+            if credentials_path and os.path.exists(credentials_path):
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+            
+            medical_vision = create_medical_vision_provider()
+            
+            if medical_vision.available():
+                print("[DEBUG] Using Google Medical Vision AI for intelligent text detection")
+                
+                # Save image temporarily for analysis
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                    image.save(tmp_file.name)
+                    tmp_path = tmp_file.name
+                
+                try:
+                    # Analyze with medical vision AI
+                    medical_regions = medical_vision.analyze_medical_image(tmp_path)
+                    
+                    # Convert to the expected format
+                    regions = []
+                    for region in medical_regions:
+                        x, y, w, h = region.bbox
+                        regions.append((int(x), int(y), int(w), int(h)))
+                        print(f"[DEBUG] Medical Vision AI region: '{region.text}' | Score: {region.importance_score:.2f} | Box: ({x}, {y}, {w}, {h})")
+                    
+                    # Clean up temp file
+                    os.unlink(tmp_path)
+                    
+                    if regions:
+                        print(f"[DEBUG] Medical Vision AI found {len(regions)} intelligent regions")
+                        return regions
+                    else:
+                        print("[DEBUG] Medical Vision AI returned no regions, falling back to Tesseract")
+                        
+                except Exception as e:
+                    print(f"[WARN] Medical Vision AI analysis failed: {e}, falling back to Tesseract")
+                    # Clean up temp file
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+            else:
+                print("[DEBUG] Medical Vision AI not available, using Tesseract")
+        except Exception as e:
+            print(f"[WARN] Failed to initialize Medical Vision AI: {e}, using Tesseract")
+    
+    # Fallback to original Tesseract-based approach
     image = preprocess_image_for_ocr(image)
 
     if enable_semantic_masking:
@@ -289,7 +395,17 @@ def batch_generate_image_occlusion_flashcards(
     flashcard_entries = []
     for img_path in image_paths:
         print(f"[DEBUG] Processing image: {img_path}")
-        image = Image.open(img_path)
+        
+        # Check if the path is actually a file, not a directory
+        if not os.path.isfile(img_path):
+            print(f"[WARN] Skipping {img_path}: not a file (might be a directory)")
+            continue
+            
+        try:
+            image = Image.open(img_path)
+        except Exception as e:
+            print(f"[WARN] Could not open image {img_path}: {e}")
+            continue
         if image.mode != 'RGB':
             image = image.convert('RGB')
         # Use higher confidence threshold (default now 50 via config)
