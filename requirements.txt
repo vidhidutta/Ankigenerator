@@ -1,3 +1,8 @@
 fastapi
 uvicorn[standard]
 python-multipart
+genanki
+python-pptx
+Pillow
+PyYAML
+requests
