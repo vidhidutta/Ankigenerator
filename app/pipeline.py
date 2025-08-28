@@ -8,6 +8,8 @@ from typing import List, Tuple
 
 from app.adapter import extract_cards_from_ppt
 
+PIPELINE_TAG = "v2.1"
+
 
 def write_csv(cards: List[Tuple[str, str]], path: str) -> str:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -54,11 +56,12 @@ def write_apkg(cards: List[Tuple[str, str]], path: str) -> str:
 
 
 def run_pipeline(input_path: str) -> tuple[str, str]:
-    """Run extraction and build CSV + APKG. Return absolute paths.
-
-    If extraction returns empty, include a sample card so APKG always imports.
-    If APKG build fails, still return a CSV and an empty APKG placeholder.
     """
+    Run the complete pipeline: extract cards, write CSV and APKG.
+    
+    Returns absolute paths to the generated files.
+    """
+    # Extract cards from the input file
     cards = extract_cards_from_ppt(input_path) or []
     print(f"[OjaMed][PIPELINE] Extracted {len(cards)} cards from {input_path}")
     if not cards:
@@ -80,15 +83,3 @@ def run_pipeline(input_path: str) -> tuple[str, str]:
         apkg_abs = os.path.abspath(apkg_path)
 
     return apkg_abs, csv_abs
-from pathlib import Path
-
-def run_pipeline(input_path: str) -> tuple[str, str]:
-    input_file = Path(input_path)
-    out_apkg = input_file.with_suffix(input_file.suffix + ".apkg")
-    out_csv  = input_file.with_suffix(input_file.suffix + ".csv")
-
-    # DEMO OUTPUTS so the API works now; replace with your real logic.
-    out_apkg.write_bytes(b"fake .apkg content")
-    out_csv.write_text("question,answer\nExample?,Yes\n", encoding="utf-8")
-
-    return str(out_apkg), str(out_csv)

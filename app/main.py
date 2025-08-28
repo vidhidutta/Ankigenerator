@@ -1,6 +1,8 @@
 import os
+import csv
 import tempfile
-from zipfile import ZipFile, ZIP_DEFLATED
+import zipfile
+import genanki
 import shutil
 from pathlib import Path
 from typing import Iterator
@@ -52,7 +54,7 @@ def _stream_to_temp(upload: UploadFile, max_mb: int) -> str:
 
 def _zip_outputs(paths: list[str]) -> str:
     zip_path = tempfile.mktemp(prefix="ojamed_", suffix=".zip")
-    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         try:
             if len(paths) > 0 and paths[0]:
                 z.write(paths[0], arcname="deck.apkg")
@@ -76,11 +78,51 @@ def _cleanup(paths: list[str]):
 
 @app.post("/convert")
 def convert(background: BackgroundTasks, file: UploadFile = File(...)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-
-    # 1) Save to temp with size guard
-    input_path = _stream_to_temp(file, MAX_FILE_MB)
+    # Validate file type
+    if not file.filename.lower().endswith(('.pptx', '.ppt', '.pdf')):
+        raise HTTPException(status_code=400, detail="Only .pptx, .ppt, and .pdf files are supported")
+    
+    # Save uploaded file to temp location
+    input_path = tempfile.mktemp(prefix="ojamed_input_", suffix=Path(file.filename).suffix)
+    try:
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    finally:
+        file.file.close()
+    
+    # Demo short-circuit
+    if os.getenv("OJAMED_FORCE_DEMO") == "1":
+        import csv
+        import genanki
+        demo_cards = [
+            ("What drug class is furosemide?", "Loop diuretic"),
+            ("Main adverse effect?", "Hypokalemia"),
+            ("Contraindicated with?", "Sulfa allergy (relative)"),
+        ]
+        # write CSV
+        tmp_dir = tempfile.mkdtemp(prefix="ojamed_demo_")
+        csv_path = os.path.join(tmp_dir, "deck.csv")
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["question","answer"])
+            w.writerows(demo_cards)
+        # write APKG (Basic model)
+        model = genanki.Model(
+            1607392319, "Basic (OjaMed)",
+            fields=[{"name":"Question"},{"name":"Answer"}],
+            templates=[{"name":"Card 1","qfmt":"{{Question}}","afmt":"{{FrontSide}}<hr id='answer'>{{Answer}}"}],
+        )
+        deck = genanki.Deck(2059400110, "OjaMed Demo Deck")
+        for q,a in demo_cards:
+            deck.add_note(genanki.Note(model=model, fields=[q,a]))
+        apkg_path = os.path.join(tmp_dir, "deck.apkg")
+        genanki.Package(deck).write_to_file(apkg_path)
+        # zip as stable names
+        zip_path = os.path.join(tmp_dir, "ojamed_deck.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(apkg_path, arcname="deck.apkg")
+            z.write(csv_path,  arcname="deck.csv")
+        return FileResponse(zip_path, media_type="application/zip", filename="ojamed_deck.zip")
 
     # 2) Run generator
     try:
@@ -108,7 +150,11 @@ def convert(background: BackgroundTasks, file: UploadFile = File(...)):
 
 @app.get("/diag")
 def diag():
+    import app.pipeline as pipeline
     return {
         "zip_names": "deck.* enabled",
         "has_openai_key": bool(os.getenv("OPENAI_API_KEY")),
+        "demo": os.getenv("OJAMED_FORCE_DEMO") == "1",
+        "debug": os.getenv("OJAMED_DEBUG") == "1",
+        "pipeline_tag": getattr(pipeline, "PIPELINE_TAG", "unknown"),
     }
