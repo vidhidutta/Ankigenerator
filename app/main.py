@@ -82,8 +82,15 @@ def convert(background: BackgroundTasks, file: UploadFile = File(...)):
     # 1) Save to temp with size guard
     input_path = _stream_to_temp(file, MAX_FILE_MB)
 
-    # 2) Run your real generator (stubbed now)
-    apkg_path, csv_path = run_pipeline(input_path)
+    # 2) Run generator
+    try:
+        apkg_path, csv_path = run_pipeline(input_path)
+    except Exception as e:
+        # Bubble error in debug mode
+        if os.getenv("OJAMED_DEBUG") == "1":
+            raise HTTPException(status_code=500, detail=str(e))
+        # Non-debug: return 500 with generic message
+        raise HTTPException(status_code=500, detail="Generation failed; check logs.")
 
     # 3) Package both into a single ZIP to simplify browser download
     zip_path = _zip_outputs([apkg_path, csv_path])

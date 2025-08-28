@@ -60,6 +60,7 @@ def run_pipeline(input_path: str) -> tuple[str, str]:
     If APKG build fails, still return a CSV and an empty APKG placeholder.
     """
     cards = extract_cards_from_ppt(input_path) or []
+    print(f"[OjaMed][PIPELINE] Extracted {len(cards)} cards from {input_path}")
     if not cards:
         cards = [("Example?", "Yes")]  # ensure importable deck
 

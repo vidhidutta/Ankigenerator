@@ -20,6 +20,7 @@ so the caller can provide a fallback card.
 from typing import Any, Iterable, List, Tuple
 import os
 import tempfile
+import traceback
 
 
 def _flatten(items: Iterable[Any]) -> list[Any]:
@@ -89,57 +90,66 @@ def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
 
     Returns an empty list on failure so the caller can decide a fallback.
     """
+    # DEMO BYPASS
+    if os.getenv("OJAMED_FORCE_DEMO") == "1":
+        print("[OjaMed][ADAPTER] DEMO MODE -> returning 3 static cards")
+        return [
+            ("What drug class is furosemide?", "Loop diuretic"),
+            ("Main adverse effect?", "Hypokalemia"),
+            ("Contraindicated with?", "Sulfa allergy (relative)"),
+        ]
+
     try:
-        # Lazy import to avoid hard failures at module import time
+        # Lazy import to avoid import-time errors
         from flashcard_generator import (
             extract_text_from_pptx,
             extract_images_from_pptx,
             generate_enhanced_flashcards_with_progress,
-            OPENAI_API_KEY,
-            MODEL_NAME,
-            MAX_TOKENS,
-            TEMPERATURE,
         )
     except Exception as e:
-        # Underlying converter unavailable; let caller fallback
-        print(f"[adapter] Converter import failed: {e}")
+        print("[OjaMed][ADAPTER] import failed:", repr(e))
+        traceback.print_exc()
+        if os.getenv("OJAMED_DEBUG") == "1":
+            raise
         return []
 
     try:
         # Extract texts and images
         with tempfile.TemporaryDirectory() as temp_dir:
-            slide_texts = extract_text_from_pptx(input_path)
-            slide_images = []
+            texts = extract_text_from_pptx(input_path)
             try:
-                slide_images = extract_images_from_pptx(input_path, temp_dir)
+                images = extract_images_from_pptx(input_path, temp_dir)
             except Exception:
-                slide_images = []
-
-            # Call main generator (no progress callback in backend)
-            gen_result = generate_enhanced_flashcards_with_progress(
-                slide_texts,
-                slide_images,
-                OPENAI_API_KEY,
-                MODEL_NAME,
-                MAX_TOKENS,
-                TEMPERATURE,
+                images = []
+            # Call with sensible defaults; map envs to arguments
+            cards_obj = generate_enhanced_flashcards_with_progress(
+                texts,
+                images,
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model=os.getenv("OJAMED_OPENAI_MODEL", "gpt-4o-mini"),
+                max_tokens=int(os.getenv("OJAMED_MAX_TOKENS", "500")),
+                temperature=float(os.getenv("OJAMED_TEMPERATURE", "0.2")),
                 progress=None,
                 use_cloze=False,
-                question_style="Word for Word",
+                question_style="Word for word",
                 audio_bundle=None,
             )
 
-        # Some call sites return (cards, analysis), others just cards
-        cards_obj = gen_result[0] if (isinstance(gen_result, tuple) and gen_result) else gen_result
+        # Some paths return (cards, analysis), others just cards
+        cards_obj = cards_obj[0] if (isinstance(cards_obj, tuple) and cards_obj) else cards_obj
 
         # Flatten if nested
         if isinstance(cards_obj, list) and any(isinstance(x, list) for x in cards_obj):
             cards_obj = _flatten(cards_obj)
 
-        pairs = _to_pairs(cards_obj)
-        return pairs
+        cards = _to_pairs(cards_obj)
+        print(f"[OjaMed][ADAPTER] -> {len(cards)} cards")
+        return cards
     except Exception as e:
-        print(f"[adapter] Generation failed: {e}")
+        print("[OjaMed][ADAPTER] converter raised:", repr(e))
+        traceback.print_exc()
+        if os.getenv("OJAMED_DEBUG") == "1":
+            raise
         return []
 
 
