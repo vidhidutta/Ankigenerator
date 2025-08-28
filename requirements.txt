@@ -7,3 +7,4 @@ Pillow
 PyYAML
 requests
 openai
+fpdf2
