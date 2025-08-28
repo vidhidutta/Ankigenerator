@@ -1,6 +1,6 @@
 import os
 import tempfile
-import zipfile
+from zipfile import ZipFile, ZIP_DEFLATED
 import shutil
 from pathlib import Path
 from typing import Iterator
@@ -52,10 +52,16 @@ def _stream_to_temp(upload: UploadFile, max_mb: int) -> str:
 
 def _zip_outputs(paths: list[str]) -> str:
     zip_path = tempfile.mktemp(prefix="ojamed_", suffix=".zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in paths:
-            arc = Path(p).name
-            z.write(p, arcname=arc if arc else Path(p).name)
+    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as z:
+        try:
+            if len(paths) > 0 and paths[0]:
+                z.write(paths[0], arcname="deck.apkg")
+            if len(paths) > 1 and paths[1]:
+                z.write(paths[1], arcname="deck.csv")
+        except Exception:
+            # Best effort: fall back to original names if indexing fails
+            for p in paths or []:
+                z.write(p, arcname=Path(p).name)
     return zip_path
 
 def _cleanup(paths: list[str]):
@@ -91,3 +97,11 @@ def convert(background: BackgroundTasks, file: UploadFile = File(...)):
         media_type="application/zip",
         filename="ojamed_deck.zip",
     )
+
+
+@app.get("/diag")
+def diag():
+    return {
+        "zip_names": "deck.* enabled",
+        "has_openai_key": bool(os.getenv("OPENAI_API_KEY")),
+    }
