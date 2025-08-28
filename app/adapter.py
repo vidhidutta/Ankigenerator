@@ -106,6 +106,10 @@ def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
             extract_images_from_pptx,
             generate_enhanced_flashcards_with_progress,
         )
+        
+        import inspect
+        print("[OjaMed][ADAPTER] signature(generate_enhanced_flashcards_with_progress) =",
+              inspect.signature(generate_enhanced_flashcards_with_progress))
     except Exception as e:
         print("[OjaMed][ADAPTER] import failed:", repr(e))
         traceback.print_exc()

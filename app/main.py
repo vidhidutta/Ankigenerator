@@ -4,12 +4,13 @@ import tempfile
 import zipfile
 import genanki
 import shutil
+import traceback
 from pathlib import Path
 from typing import Iterator
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from app.pipeline import run_pipeline
 
@@ -77,75 +78,80 @@ def _cleanup(paths: list[str]):
             pass
 
 @app.post("/convert")
-def convert(background: BackgroundTasks, file: UploadFile = File(...)):
-    # Validate file type
-    if not file.filename.lower().endswith(('.pptx', '.ppt', '.pdf')):
-        raise HTTPException(status_code=400, detail="Only .pptx, .ppt, and .pdf files are supported")
-    
-    # Save uploaded file to temp location
-    input_path = tempfile.mktemp(prefix="ojamed_input_", suffix=Path(file.filename).suffix)
+async def convert(background: BackgroundTasks, file: UploadFile = File(...)):
     try:
-        with open(input_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-    finally:
-        file.file.close()
-    
-    # Demo short-circuit
-    if os.getenv("OJAMED_FORCE_DEMO") == "1":
-        import csv
-        import genanki
-        demo_cards = [
-            ("What drug class is furosemide?", "Loop diuretic"),
-            ("Main adverse effect?", "Hypokalemia"),
-            ("Contraindicated with?", "Sulfa allergy (relative)"),
-        ]
-        # write CSV
-        tmp_dir = tempfile.mkdtemp(prefix="ojamed_demo_")
-        csv_path = os.path.join(tmp_dir, "deck.csv")
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["question","answer"])
-            w.writerows(demo_cards)
-        # write APKG (Basic model)
-        model = genanki.Model(
-            1607392319, "Basic (OjaMed)",
-            fields=[{"name":"Question"},{"name":"Answer"}],
-            templates=[{"name":"Card 1","qfmt":"{{Question}}","afmt":"{{FrontSide}}<hr id='answer'>{{Answer}}"}],
-        )
-        deck = genanki.Deck(2059400110, "OjaMed Demo Deck")
-        for q,a in demo_cards:
-            deck.add_note(genanki.Note(model=model, fields=[q,a]))
-        apkg_path = os.path.join(tmp_dir, "deck.apkg")
-        genanki.Package(deck).write_to_file(apkg_path)
-        # zip as stable names
-        zip_path = os.path.join(tmp_dir, "ojamed_deck.zip")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(apkg_path, arcname="deck.apkg")
-            z.write(csv_path,  arcname="deck.csv")
+        # Validate file type
+        if not file.filename.lower().endswith(('.pptx', '.ppt', '.pdf')):
+            raise HTTPException(status_code=400, detail="Only .pptx, .ppt, and .pdf files are supported")
+        
+        # Save uploaded file to temp location
+        input_path = tempfile.mktemp(prefix="ojamed_input_", suffix=Path(file.filename).suffix)
+        try:
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+        finally:
+            file.file.close()
+        
+        # Demo short-circuit
+        if os.getenv("OJAMED_FORCE_DEMO") == "1":
+            import csv
+            import genanki
+            demo_cards = [
+                ("What drug class is furosemide?", "Loop diuretic"),
+                ("Main adverse effect?", "Hypokalemia"),
+                ("Contraindicated with?", "Sulfa allergy (relative)"),
+            ]
+            # write CSV
+            tmp_dir = tempfile.mkdtemp(prefix="ojamed_demo_")
+            csv_path = os.path.join(tmp_dir, "deck.csv")
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["question","answer"])
+                w.writerows(demo_cards)
+            # write APKG (Basic model)
+            model = genanki.Model(
+                1607392319, "Basic (OjaMed)",
+                fields=[{"name":"Question"},{"name":"Answer"}],
+                templates=[{"name":"Card 1","qfmt":"{{Question}}","afmt":"{{FrontSide}}<hr id='answer'>{{Answer}}"}],
+            )
+            deck = genanki.Deck(2059400110, "OjaMed Demo Deck")
+            for q,a in demo_cards:
+                deck.add_note(genanki.Note(model=model, fields=[q,a]))
+            apkg_path = os.path.join(tmp_dir, "deck.apkg")
+            genanki.Package(deck).write_to_file(apkg_path)
+            # zip as stable names
+            zip_path = os.path.join(tmp_dir, "ojamed_deck.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+                z.write(apkg_path, arcname="deck.apkg")
+                z.write(csv_path,  arcname="deck.csv")
+            return FileResponse(zip_path, media_type="application/zip", filename="ojamed_deck.zip")
+
+        # 2) Run generator
+        try:
+            apkg_path, csv_path = run_pipeline(input_path)
+        except Exception as e:
+            # Bubble error in debug mode
+            if os.getenv("OJAMED_DEBUG") == "1":
+                raise HTTPException(status_code=500, detail=str(e))
+            # Non-debug: return 500 with generic message
+            raise HTTPException(status_code=500, detail="Generation failed; check logs.")
+        
+        # 3) Zip the outputs
+        zip_path = _zip_outputs([apkg_path, csv_path])
+        
+        # 4) Clean up temp files in background
+        background.add_task(_cleanup, [input_path, apkg_path, csv_path])
+        
         return FileResponse(zip_path, media_type="application/zip", filename="ojamed_deck.zip")
-
-    # 2) Run generator
-    try:
-        apkg_path, csv_path = run_pipeline(input_path)
     except Exception as e:
-        # Bubble error in debug mode
+        tb = traceback.format_exc()
+        print("[OjaMed][ERROR] /convert failed:", repr(e))
+        print(tb)
+        # If debug flag is on, return the traceback so we can see it from curl
         if os.getenv("OJAMED_DEBUG") == "1":
-            raise HTTPException(status_code=500, detail=str(e))
-        # Non-debug: return 500 with generic message
-        raise HTTPException(status_code=500, detail="Generation failed; check logs.")
-
-    # 3) Package both into a single ZIP to simplify browser download
-    zip_path = _zip_outputs([apkg_path, csv_path])
-
-    # 4) Clean up temp files after response is sent
-    background.add_task(_cleanup, [input_path, apkg_path, csv_path, zip_path])
-
-    # 5) Return the ZIP
-    return FileResponse(
-        zip_path,
-        media_type="application/zip",
-        filename="ojamed_deck.zip",
-    )
+            return PlainTextResponse(tb, status_code=500)
+        # Otherwise keep a generic 500
+        return PlainTextResponse("Internal Server Error", status_code=500)
 
 
 @app.get("/diag")
