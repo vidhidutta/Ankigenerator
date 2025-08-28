@@ -21,6 +21,9 @@ from typing import Any, Iterable, List, Tuple
 import os
 import tempfile
 import traceback
+import json
+from pptx import Presentation
+from openai import OpenAI
 
 
 def _flatten(items: Iterable[Any]) -> list[Any]:
@@ -84,6 +87,58 @@ def _to_pairs(obj: Any) -> list[Tuple[str, str]]:
     return []
 
 
+def _pptx_text_blocks(path: str) -> list[str]:
+    """Extract text blocks from PPTX using python-pptx (lightweight)."""
+    texts = []
+    prs = Presentation(path)
+    for slide in prs.slides:
+        parts = []
+        for shape in slide.shapes:
+            if hasattr(shape, "text") and shape.text:
+                parts.append(shape.text)
+        if parts:
+            texts.append("\n".join(parts))
+    return texts
+
+
+def _openai_cards_from_texts(blocks: list[str], max_cards: int = 30) -> list[tuple[str,str]]:
+    """Generate flashcards from text blocks using OpenAI directly (lightweight)."""
+    if not blocks:
+        return []
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    prompt = (
+        "You convert lecture notes into Anki Basic flashcards.\n"
+        "Return ONLY valid JSON: a list of objects {\"q\":..., \"a\":...}.\n"
+        f"Max {max_cards} cards. Use concise, clinically relevant Q/A. No markdown.\n"
+    )
+    joined = "\n\n--- SLIDES ---\n\n" + "\n\n---\n\n".join(blocks[:15])  # limit context
+    r = client.chat.completions.create(
+        model=os.getenv("OJAMED_OPENAI_MODEL","gpt-4o-mini"),
+        messages=[{"role":"system","content":prompt},
+                  {"role":"user","content":joined}],
+        temperature=float(os.getenv("OJAMED_TEMPERATURE","0.2"))
+    )
+    text = r.choices[0].message.content.strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        # attempt to extract JSON substring
+        import re
+        m = re.search(r'\[.*\]', text, flags=re.S)
+        data = json.loads(m.group(0)) if m else []
+    cards = []
+    if isinstance(data, list):
+        for it in data:
+            if isinstance(it, dict):
+                q = it.get("q") or it.get("question")
+                a = it.get("a") or it.get("answer")
+                if q and a:
+                    cards.append((str(q).strip(), str(a).strip()))
+            elif isinstance(it, (list, tuple)) and len(it) >= 2:
+                cards.append((str(it[0]).strip(), str(it[1]).strip()))
+    return cards[:max_cards]
+
+
 def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
     """
     Extract flashcards from a PPT/PDF path and normalize to (question, answer) tuples.
@@ -99,6 +154,19 @@ def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
             ("Contraindicated with?", "Sulfa allergy (relative)"),
         ]
 
+    # If light mode, skip importing flashcard_generator/sklearn entirely
+    if os.getenv("OJAMED_DISABLE_SKLEARN") == "1":
+        try:
+            blocks = _pptx_text_blocks(input_path)
+            cards = _openai_cards_from_texts(blocks, max_cards=int(os.getenv("OJAMED_MAX_CARDS","30")))
+            print(f"[OjaMed][ADAPTER][LIGHT] -> {len(cards)} cards")
+            return cards
+        except Exception as e:
+            print("[OjaMed][ADAPTER][LIGHT] failed:", repr(e))
+            traceback.print_exc()
+            return []
+
+    # else use the existing heavy path (unchanged)
     try:
         # Lazy import to avoid import-time errors
         from flashcard_generator import (
