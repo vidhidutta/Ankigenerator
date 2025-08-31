@@ -7,5 +7,4 @@ Pillow
 PyYAML
 requests
 openai
-fpdf2
-scikit-learn
+reportlab

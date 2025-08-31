@@ -31,6 +31,34 @@ cloze: auto_detect
 
 exam: Year 2 MBBS  # or Finals, PLAB, USMLE, Other: [short answer]
 
+# Holistic Medical Analysis & Mind Map Generation
+holistic_analysis:
+  enabled: true
+  ai_role: "medical_expert_educator"  # AI acts as comprehensive medical expert
+  analysis_depth: "comprehensive"      # full, comprehensive, or targeted
+  
+  # Mind Map Generation
+  mind_maps:
+    enabled: true
+    style: "concept_network"           # concept_network, hierarchical, or flow_diagram
+    max_concepts_per_map: 15          # Maximum concepts to avoid overcrowding
+    include_relationships: true        # Show connections between concepts
+    visual_style: "medical_theme"     # medical_theme, clean, or colorful
+    
+  # Knowledge Gap Filling
+  knowledge_gaps:
+    enabled: true
+    fill_missing_concepts: true        # AI adds missing foundational knowledge
+    include_clinical_context: true     # Add clinical relevance and examples
+    cross_reference_topics: true       # Link related concepts across the lecture
+    
+  # Output Formats
+  outputs:
+    generate_pdf_notes: true           # Create comprehensive PDF with mind maps
+    include_glossary: true             # Add medical terminology glossary
+    include_clinical_pearls: true      # Add key clinical insights
+    include_learning_objectives: true  # Add clear learning goals
+
 # Image Occlusion Configuration
 image_occlusion:
   region_expand_pct: 0.4  # Expand regions by 40% to ensure full text coverage

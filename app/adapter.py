@@ -22,6 +22,7 @@ import os
 import tempfile
 import traceback
 import json
+import inspect
 from pptx import Presentation
 from openai import OpenAI
 
@@ -139,12 +140,18 @@ def _openai_cards_from_texts(blocks: list[str], max_cards: int = 30) -> list[tup
     return cards[:max_cards]
 
 
-def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
+def extract_cards_from_ppt(input_path: str):
     """
-    Extract flashcards from a PPT/PDF path and normalize to (question, answer) tuples.
-
-    Returns an empty list on failure so the caller can decide a fallback.
+    Extract flashcards from PowerPoint file using holistic medical analysis
+    
+    This enhanced version now provides:
+    1. Traditional flashcards (Level 1 & 2)
+    2. Comprehensive medical concept analysis
+    3. Visual mind maps showing relationships
+    4. Knowledge gap filling with expert explanations
+    5. Clinical pearls and learning objectives
     """
+    
     # DEMO BYPASS
     if os.getenv("OJAMED_FORCE_DEMO") == "1":
         print("[OjaMed][ADAPTER] DEMO MODE -> returning 3 static cards")
@@ -153,7 +160,145 @@ def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
             ("Main adverse effect?", "Hypokalemia"),
             ("Contraindicated with?", "Sulfa allergy (relative)"),
         ]
+    
+    try:
+        # Check if holistic analysis is enabled
+        if os.getenv("OJAMED_HOLISTIC_ANALYSIS", "1") == "1":
+            print("[OjaMed][ADAPTER] 🧠 Holistic medical analysis enabled")
+            
+            # Import holistic analyzer
+            try:
+                from holistic_medical_analyzer import HolisticMedicalAnalyzer
+                from medical_notes_pdf_generator import generate_medical_notes_pdf
+                
+                # Initialize holistic analyzer
+                api_key = os.getenv("OPENAI_API_KEY")
+                if not api_key:
+                    print("[OjaMed][ADAPTER] ⚠️ No OpenAI API key found, falling back to basic extraction")
+                    return _basic_extraction_fallback(input_path)
+                
+                analyzer = HolisticMedicalAnalyzer(api_key)
+                
+                # Extract text content from PPTX
+                lecture_content = _extract_full_lecture_content(input_path)
+                if not lecture_content:
+                    print("[OjaMed][ADAPTER] ⚠️ No content extracted, falling back to basic extraction")
+                    return _basic_extraction_fallback(input_path)
+                
+                print(f"[OjaMed][ADAPTER] 📚 Extracted {len(lecture_content)} characters of lecture content")
+                
+                # Perform holistic analysis
+                lecture_title = os.path.basename(input_path).replace('.pptx', '').replace('.ppt', '')
+                holistic_analysis = analyzer.analyze_lecture_holistically(lecture_content, lecture_title)
+                
+                print(f"[OjaMed][ADAPTER] 🧠 Holistic analysis complete:")
+                print(f"  • {len(holistic_analysis.concepts)} concepts identified")
+                print(f"  • {len(holistic_analysis.mind_maps)} mind maps generated")
+                print(f"  • {len(holistic_analysis.filled_gaps)} knowledge gaps filled")
+                print(f"  • {len(holistic_analysis.clinical_pearls)} clinical pearls extracted")
+                
+                # Generate comprehensive PDF notes
+                try:
+                    pdf_path = generate_medical_notes_pdf(holistic_analysis, f"{lecture_title}_comprehensive_notes.pdf")
+                    print(f"[OjaMed][ADAPTER] 📄 Comprehensive notes PDF generated: {pdf_path}")
+                    
+                    # Store PDF path for pipeline to include in ZIP
+                    os.environ["OJAMED_COMPREHENSIVE_NOTES_PDF"] = pdf_path
+                    
+                except Exception as e:
+                    print(f"[OjaMed][ADAPTER] ⚠️ PDF generation failed: {e}")
+                    traceback.print_exc()
+                
+                # Convert concepts to flashcards
+                cards = _convert_concepts_to_flashcards(holistic_analysis)
+                print(f"[OjaMed][ADAPTER] 🎯 Generated {len(cards)} flashcards from holistic analysis")
+                
+                return cards
+                
+            except ImportError as e:
+                print(f"[OjaMed][ADAPTER] ⚠️ Holistic analysis modules not available: {e}")
+                print("[OjaMed][ADAPTER] Falling back to basic extraction")
+                return _basic_extraction_fallback(input_path)
+        
+        else:
+            print("[OjaMed][ADAPTER] Holistic analysis disabled, using basic extraction")
+            return _basic_extraction_fallback(input_path)
+            
+    except Exception as e:
+        print("[OjaMed][ADAPTER] Error in holistic analysis:", repr(e))
+        traceback.print_exc()
+        
+        # When debugging, let the API surface the error upstream
+        if os.getenv("OJAMED_DEBUG") == "1":
+            raise
+        
+        print("[OjaMed][ADAPTER] Falling back to basic extraction")
+        return _basic_extraction_fallback(input_path)
 
+def _extract_full_lecture_content(input_path: str) -> str:
+    """Extract all text content from PowerPoint file"""
+    try:
+        prs = Presentation(input_path)
+        content = []
+        
+        for slide_num, slide in enumerate(prs.slides):
+            slide_content = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_content.append(shape.text.strip())
+            
+            if slide_content:
+                content.append(f"--- SLIDE {slide_num + 1} ---")
+                content.extend(slide_content)
+                content.append("")  # Empty line between slides
+        
+        return "\n".join(content)
+        
+    except Exception as e:
+        print(f"[OjaMed][ADAPTER] Error extracting lecture content: {e}")
+        return ""
+
+def _convert_concepts_to_flashcards(holistic_analysis) -> list:
+    """Convert holistic analysis concepts to flashcard format"""
+    cards = []
+    
+    # Convert concepts to basic flashcards
+    for concept in holistic_analysis.concepts:
+        # Level 1 card (basic recall)
+        if concept.definition:
+            question = f"What is {concept.name}?"
+            answer = concept.definition
+            cards.append((question, answer))
+        
+        # Level 2 card (clinical application) if clinical relevance exists
+        if concept.clinical_relevance:
+            question = f"What is the clinical significance of {concept.name}?"
+            answer = concept.clinical_relevance
+            cards.append((question, answer))
+        
+        # Relationship cards
+        for related in concept.relationships[:2]:  # Limit to 2 relationships per concept
+            question = f"How does {concept.name} relate to {related}?"
+            answer = f"{concept.name} and {related} are related concepts in this lecture"
+            cards.append((question, answer))
+    
+    # Add clinical pearls as flashcards
+    for pearl in holistic_analysis.clinical_pearls:
+        question = "What is a key clinical pearl from this lecture?"
+        answer = pearl
+        cards.append((question, answer))
+    
+    # Add learning objectives as flashcards
+    for objective in holistic_analysis.learning_objectives[:3]:  # Limit to 3
+        question = "What is a learning objective for this lecture?"
+        answer = objective
+        cards.append((question, answer))
+    
+    return cards
+
+def _basic_extraction_fallback(input_path: str):
+    """Fallback to basic extraction when holistic analysis is not available"""
+    
     # If light mode, skip importing flashcard_generator/sklearn entirely
     if os.getenv("OJAMED_DISABLE_SKLEARN") == "1":
         try:
@@ -165,63 +310,58 @@ def extract_cards_from_ppt(input_path: str) -> List[Tuple[str, str]]:
             print("[OjaMed][ADAPTER][LIGHT] failed:", repr(e))
             traceback.print_exc()
             return []
-
+    
     # else use the existing heavy path (unchanged)
     try:
-        # Lazy import to avoid import-time errors
         from flashcard_generator import (
             extract_text_from_pptx,
             extract_images_from_pptx,
             generate_enhanced_flashcards_with_progress,
         )
-        
-        import inspect
-        print("[OjaMed][ADAPTER] signature(generate_enhanced_flashcards_with_progress) =",
-              inspect.signature(generate_enhanced_flashcards_with_progress))
     except Exception as e:
         print("[OjaMed][ADAPTER] import failed:", repr(e))
         traceback.print_exc()
-        if os.getenv("OJAMED_DEBUG") == "1":
-            raise
         return []
-
+    
     try:
-        # Extract texts and images
-        with tempfile.TemporaryDirectory() as temp_dir:
-            texts = extract_text_from_pptx(input_path)
-            try:
-                images = extract_images_from_pptx(input_path, temp_dir)
-            except Exception:
-                images = []
-            # Call with sensible defaults; map envs to arguments
-            cards_obj = generate_enhanced_flashcards_with_progress(
-                texts,
-                images,
-                api_key=os.getenv("OPENAI_API_KEY"),
-                model=os.getenv("OJAMED_OPENAI_MODEL", "gpt-4o-mini"),
-                max_tokens=int(os.getenv("OJAMED_MAX_TOKENS", "500")),
-                temperature=float(os.getenv("OJAMED_TEMPERATURE", "0.2")),
-                progress=None,
-                use_cloze=False,
-                question_style="Word for word",
-                audio_bundle=None,
-            )
-
-        # Some paths return (cards, analysis), others just cards
-        cards_obj = cards_obj[0] if (isinstance(cards_obj, tuple) and cards_obj) else cards_obj
-
-        # Flatten if nested
-        if isinstance(cards_obj, list) and any(isinstance(x, list) for x in cards_obj):
-            cards_obj = _flatten(cards_obj)
-
-        cards = _to_pairs(cards_obj)
-        print(f"[OjaMed][ADAPTER] -> {len(cards)} cards")
-        return cards
+        texts = extract_text_from_pptx(input_path)
+        images = extract_images_from_pptx(input_path)
+        cards_obj = generate_enhanced_flashcards_with_progress(
+            texts, images,
+            model=os.getenv("OJAMED_OPENAI_MODEL","gpt-4o-mini"),
+            temperature=float(os.getenv("OJAMED_TEMPERATURE","0.2")),
+            max_tokens=int(os.getenv("OJAMED_MAX_TOKENS","500")),
+            api_key=os.getenv("OPENAI_API_KEY"),
+        )
     except Exception as e:
         print("[OjaMed][ADAPTER] converter raised:", repr(e))
         traceback.print_exc()
         if os.getenv("OJAMED_DEBUG") == "1":
             raise
         return []
+    
+    # normalize as before (keep existing normalization code) and return list[(q,a)]
+    cards = []
+    try:
+        if isinstance(cards_obj, dict) and "cards" in cards_obj:
+            cards_obj = cards_obj["cards"]
+        if hasattr(cards_obj, "to_dict"):
+            cards_obj = cards_obj.to_dict(orient="records")
+        if isinstance(cards_obj, list):
+            for row in cards_obj:
+                if isinstance(row, (tuple, list)) and len(row) >= 2:
+                    q, a = row[0], row[1]
+                elif isinstance(row, dict):
+                    q = row.get("q") or row.get("question") or row.get("Question")
+                    a = row.get("a") or row.get("answer") or row.get("Answer")
+                else:
+                    continue
+                if q and a:
+                    cards.append((str(q).strip(), str(a).strip()))
+    except Exception as e:
+        print("[OjaMed][ADAPTER] normalization failed:", repr(e))
+        traceback.print_exc()
+    
+    return cards
 
 
