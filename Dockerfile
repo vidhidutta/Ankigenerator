@@ -6,9 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install git to handle submodules
-RUN apt-get update && apt-get install -y git && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 # Copy package files and install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
@@ -16,8 +13,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Copy the whole repo so flashcard_generator.py and friends are inside the image
 COPY . .
 
-# Initialize and update submodules to get the frontend files
-RUN git submodule update --init --recursive
+# Debug: Check what's in the ojamed-web directory
+RUN echo "=== Contents of ojamed-web ===" && ls -la ojamed-web/ && echo "=== Contents of ojamed-web/dist ===" && ls -la ojamed-web/dist/ || echo "dist directory not found"
 
 # Ensure /app is on PYTHONPATH
 ENV PYTHONPATH=/app
