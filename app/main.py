@@ -22,7 +22,6 @@ app.add_middleware(
 # Mount static files (React frontend)
 if os.path.exists("ojamed-web/dist"):
     app.mount("/assets", StaticFiles(directory="ojamed-web/dist/assets"), name="assets")
-    app.mount("/static", StaticFiles(directory="ojamed-web/dist"), name="static")
 
 @app.get("/")
 def read_root():
@@ -157,3 +156,12 @@ async def convert(background_tasks: BackgroundTasks, file: UploadFile = File(...
         
         # Otherwise keep a generic 500
         return PlainTextResponse("Internal Server Error", status_code=500)
+
+# Catch-all route for React Router (must be at the very end)
+@app.get("/{full_path:path}")
+def serve_react_app(full_path: str):
+    # Only serve React app for non-API routes
+    if not full_path.startswith(("api/", "diag", "convert")):
+        if os.path.exists("ojamed-web/dist/index.html"):
+            return FileResponse("ojamed-web/dist/index.html")
+    return {"error": "Not found"}
