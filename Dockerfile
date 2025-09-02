@@ -13,8 +13,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Copy the whole repo so flashcard_generator.py and friends are inside the image
 COPY . .
 
-# Debug: Check what's in the ojamed-web directory
-RUN echo "=== Contents of ojamed-web ===" && ls -la ojamed-web/ && echo "=== Contents of ojamed-web/dist ===" && ls -la ojamed-web/dist/ || echo "dist directory not found"
+# Debug: Check what's in the frontend directories
+RUN echo "=== Contents of frontend-dist ===" && ls -la frontend-dist/ || echo "frontend-dist directory not found" && echo "=== Contents of ojamed-web ===" && ls -la ojamed-web/ || echo "ojamed-web directory not found"
 
 # Ensure /app is on PYTHONPATH
 ENV PYTHONPATH=/app

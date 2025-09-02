@@ -20,14 +20,14 @@ app.add_middleware(
 )
 
 # Mount static files (React frontend)
-if os.path.exists("ojamed-web/dist"):
-    app.mount("/assets", StaticFiles(directory="ojamed-web/dist/assets"), name="assets")
+if os.path.exists("frontend-dist"):
+    app.mount("/assets", StaticFiles(directory="frontend-dist/assets"), name="assets")
 
 @app.get("/")
 def read_root():
     # Serve the React frontend
-    if os.path.exists("ojamed-web/dist/index.html"):
-        return FileResponse("ojamed-web/dist/index.html")
+    if os.path.exists("frontend-dist/index.html"):
+        return FileResponse("frontend-dist/index.html")
     return {"message": "OjaMed Flashcard Generator API", "version": "2.2.0", "frontend": "Not built yet"}
 
 @app.get("/diag")
@@ -162,6 +162,6 @@ async def convert(background_tasks: BackgroundTasks, file: UploadFile = File(...
 def serve_react_app(full_path: str):
     # Only serve React app for non-API routes
     if not full_path.startswith(("api/", "diag", "convert")):
-        if os.path.exists("ojamed-web/dist/index.html"):
-            return FileResponse("ojamed-web/dist/index.html")
+        if os.path.exists("frontend-dist/index.html"):
+            return FileResponse("frontend-dist/index.html")
     return {"error": "Not found", "path": full_path}
