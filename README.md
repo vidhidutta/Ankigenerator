@@ -1,4 +1,5 @@
 # OjaMed API (FastAPI)
+# Force deployment - API URL fix
 
 Minimal FastAPI service for OjaMed "upload -> generate deck" flow.
 - `POST /convert` with `file` (PPT/PPTX/PDF) returns a ZIP containing:
