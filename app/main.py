@@ -28,7 +28,7 @@ def read_root():
     # Serve the React frontend
     if os.path.exists("ojamed-web/dist/index.html"):
         return FileResponse("ojamed-web/dist/index.html")
-    return {"message": "OjaMed Flashcard Generator API", "version": "2.2.0"}
+    return {"message": "OjaMed Flashcard Generator API", "version": "2.2.0", "frontend": "Not built yet"}
 
 @app.get("/diag")
 def diag():
@@ -164,4 +164,4 @@ def serve_react_app(full_path: str):
     if not full_path.startswith(("api/", "diag", "convert")):
         if os.path.exists("ojamed-web/dist/index.html"):
             return FileResponse("ojamed-web/dist/index.html")
-    return {"error": "Not found"}
+    return {"error": "Not found", "path": full_path}
