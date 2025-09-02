@@ -4,6 +4,7 @@ import zipfile
 import traceback
 from fastapi import FastAPI, File, UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import app.pipeline as pipeline
 
@@ -18,8 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files (React frontend)
+if os.path.exists("ojamed-web/dist"):
+    app.mount("/assets", StaticFiles(directory="ojamed-web/dist/assets"), name="assets")
+    app.mount("/static", StaticFiles(directory="ojamed-web/dist"), name="static")
+
 @app.get("/")
 def read_root():
+    # Serve the React frontend
+    if os.path.exists("ojamed-web/dist/index.html"):
+        return FileResponse("ojamed-web/dist/index.html")
     return {"message": "OjaMed Flashcard Generator API", "version": "2.2.0"}
 
 @app.get("/diag")
