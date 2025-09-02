@@ -180,15 +180,20 @@ def detect_text_regions(image: Image.Image, conf_threshold: int = 75, use_blocks
     # Try Google Medical Vision AI first if enabled
     if use_google_vision:
         try:
-            import os
+            # use module-level os (avoid local import shadowing earlier usages)
             from providers.medical_vision_provider import create_medical_vision_provider
             
             # Check if credentials are available
             credentials_path = io_config.get('google_credentials_path')
+            print(f"[DEBUG] Google credentials path from config: {credentials_path}")
             if credentials_path and os.path.exists(credentials_path):
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+                print(f"[DEBUG] Set GOOGLE_APPLICATION_CREDENTIALS to: {credentials_path}")
+            else:
+                print(f"[DEBUG] Credentials path not found or doesn't exist: {credentials_path}")
             
             medical_vision = create_medical_vision_provider()
+            print(f"[DEBUG] Medical vision provider created, checking availability...")
             
             if medical_vision.available():
                 print("[DEBUG] Using Google Medical Vision AI for intelligent text detection")
@@ -412,7 +417,7 @@ def batch_generate_image_occlusion_flashcards(
         io_config = config.get("image_occlusion", {})
         use_blocks = io_config.get("use_blocks", True)
         use_google_vision = io_config.get("use_google_vision", True)  # Default to Google Vision
-        credentials_path = io_config.get("google_credentials_path", "~/anki-flashcard-generator/google_credentials.json")
+        credentials_path = os.path.expanduser(io_config.get("google_credentials_path", "~/anki-flashcard-generator/google_credentials.json"))
         
         # Try Google Vision API first, fallback to Tesseract if it fails
         # If requested, attempt Google Cloud Vision OCR for region detection.  This
@@ -452,7 +457,17 @@ def batch_generate_image_occlusion_flashcards(
                     ys = [v.y or 0 for v in verts]
                     x0, y0 = min(xs), min(ys)
                     x1, y1 = max(xs), max(ys)
-                    g_regions.append((x0, y0, x1 - x0, y1 - y0))
+                    # Expand boxes slightly to ensure coverage of thin text
+                    pad_ratio = io_config.get("region_expand_pct", 0.4) * 0.25  # lighter expansion for Vision
+                    w = x1 - x0
+                    h = y1 - y0
+                    pad_w = int(w * pad_ratio)
+                    pad_h = int(h * pad_ratio)
+                    ex0 = max(0, x0 - pad_w)
+                    ey0 = max(0, y0 - pad_h)
+                    ex1 = min(image.width, x1 + pad_w)
+                    ey1 = min(image.height, y1 + pad_h)
+                    g_regions.append((ex0, ey0, ex1 - ex0, ey1 - ey0))
 
                 # Respect the max_masks parameter by limiting the number of
                 # returned regions.  If more regions are detected than
@@ -481,9 +496,14 @@ def batch_generate_image_occlusion_flashcards(
             img_area = image.width * image.height
             area_ratio = area / img_area
             
-            # Use different area thresholds for Google Vision vs Tesseract
-            min_area_ratio = 0.002 if use_google_vision else 0.005  # Lower threshold for Google Vision
-            max_area_ratio = 0.3
+            # Use configurable area thresholds for Google Vision vs Tesseract
+            min_area_ratio_google = io_config.get("min_area_ratio_google", 0.002)
+            max_area_ratio_google = io_config.get("max_area_ratio_google", 0.3)
+            min_area_ratio_tesseract = io_config.get("min_area_ratio_tesseract", 0.005)
+            max_area_ratio_tesseract = io_config.get("max_area_ratio_tesseract", 0.3)
+
+            min_area_ratio = min_area_ratio_google if use_google_vision else min_area_ratio_tesseract
+            max_area_ratio = max_area_ratio_google if use_google_vision else max_area_ratio_tesseract
             
             if area_ratio < min_area_ratio or area_ratio > max_area_ratio:
                 print(f"[DEBUG] Skipping region {idx}: area_ratio={area_ratio:.4f} (min={min_area_ratio}, max={max_area_ratio})")

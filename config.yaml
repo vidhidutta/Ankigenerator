@@ -78,6 +78,12 @@ image_occlusion:
   # Google Vision API Configuration
   use_google_vision: true  # Set to true to use Google Vision API instead of Tesseract
   google_credentials_path: "/home/vidhidutta/anki-flashcard-generator/google_credentials.json"  # Path to service account JSON
+  # Area ratio thresholds (fraction of total image area) for filtering regions
+  # Lower min for Google Vision to allow smaller text boxes
+  min_area_ratio_google: 0.0005
+  max_area_ratio_google: 0.35
+  min_area_ratio_tesseract: 0.005
+  max_area_ratio_tesseract: 0.3
   
   # Adaptive AI Configuration
   enable_adaptive_config: true  # AI automatically adjusts parameters based on image analysis

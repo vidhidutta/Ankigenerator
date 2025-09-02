@@ -1,6 +1,7 @@
-fastapi
-uvicorn[standard]
-python-multipart
+# FastAPI for the image occlusion API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
 genanki
 python-pptx
 Pillow

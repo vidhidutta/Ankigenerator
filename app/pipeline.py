@@ -35,6 +35,30 @@ def write_apkg(cards: List[Tuple[str, str]], path: str) -> str:
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
+    # Occlusion-only mode: if environment flag set, emit an empty IOE deck to avoid Basic model creation
+    if os.getenv("OJAMED_OCCLUSION_ONLY", "0") == "1":
+        try:
+            from anki_models import IOE_MODEL
+        except Exception:
+            # Fallback: create a minimal IOE-like model to ensure Anki imports as image-occlusion type
+            IOE_MODEL = genanki.Model(
+                1876543210,
+                "Image Occlusion Enhanced+",
+                fields=[{"name": "Question Mask"}, {"name": "Original Mask"}],
+                templates=[{"name": "IO Card", "qfmt": "{{Question Mask}}", "afmt": "{{Original Mask}}"}],
+            )
+        deck = genanki.Deck(2059400101, "OjaMed Deck (Occlusion)")
+        # No basic notes added here – occlusion images will be added later by the main generator path
+        # Keep deck valid by adding a harmless empty IOE note if Anki requires at least one
+        if not cards:
+            try:
+                deck.add_note(genanki.Note(model=IOE_MODEL, fields=["", ""]))
+            except Exception:
+                pass
+        genanki.Package(deck).write_to_file(path)
+        return os.path.abspath(path)
+
+    # Default basic deck for text pairs
     model = genanki.Model(
         1607392319,
         "Basic (OjaMed)",

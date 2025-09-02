@@ -1,4 +1,4 @@
-image.png#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Test script for image occlusion export functionality
 """

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+import io
 import importlib.util
 import os
 import uuid
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -25,7 +26,7 @@ _OCR_CACHE: dict[tuple[str, bool, str], OcrResult] = {}
 
 
 class PaddleOCRProvider:
-    """OCR provider using PaddleOCR with optional preprocessing."""
+    """OCR provider using Google Vision API first, then Tesseract fallback."""
 
     def __init__(self, lang: str = "en", use_angle_cls: bool = True, workdir: str = ".") -> None:
         self.lang = lang
@@ -35,13 +36,20 @@ class PaddleOCRProvider:
 
     @staticmethod
     def available() -> bool:
-        has_paddleocr = importlib.util.find_spec("paddleocr") is not None
-        has_paddle_core = importlib.util.find_spec("paddle") is not None
-        return bool(has_paddleocr and has_paddle_core)
+        # Check if Google Vision API is available
+        has_google_vision = importlib.util.find_spec("google.cloud.vision") is not None
+        has_credentials = bool(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+        return has_google_vision and has_credentials
 
     @staticmethod
     def tesseract_available() -> bool:
         return importlib.util.find_spec("pytesseract") is not None
+
+    @staticmethod
+    def google_vision_available() -> bool:
+        has_google_vision = importlib.util.find_spec("google.cloud.vision") is not None
+        has_credentials = bool(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+        return has_google_vision and has_credentials
 
     def _ensure_loaded(self) -> None:
         if self._ocr is None:
@@ -66,15 +74,100 @@ class PaddleOCRProvider:
         pil.save(out_path)
         return pil, out_path
 
+    def _do_google_vision_ocr(self, resized: Image.Image, sx: float, sy: float) -> OcrResult:
+        """Use Google Vision API for OCR"""
+        print(f"[DEBUG] _do_google_vision_ocr called")
+        try:
+            from google.cloud import vision
+            from google.cloud.vision_v1 import types
+            print(f"[DEBUG] Google Vision imports successful")
+            
+            # Initialize Google Vision client
+            client = vision.ImageAnnotatorClient()
+            
+            # Convert PIL image to bytes
+            img_byte_arr = io.BytesIO()
+            resized.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+            
+            # Create image object
+            image = types.Image(content=img_byte_arr)
+            
+            # Perform text detection
+            response = client.text_detection(image=image)
+            texts = response.text_annotations
+            
+            words: List[OCRWord] = []
+            if texts:
+                # First element contains the entire text, skip it
+                for text in texts[1:]:
+                    text_content = text.description.strip()
+                    if not text_content:
+                        continue
+                    
+                    # Get bounding polygon
+                    vertices = text.bounding_poly.vertices
+                    if len(vertices) >= 4:
+                        x_coords = [int(v.x * sx) for v in vertices]
+                        y_coords = [int(v.y * sy) for v in vertices]
+                        x1, y1 = min(x_coords), min(y_coords)
+                        x2, y2 = max(x_coords), max(y_coords)
+                        
+                        # Use confidence from response if available
+                        confidence = 0.9  # Google Vision doesn't provide per-word confidence
+                        
+                        words.append(OCRWord(
+                            text=text_content,
+                            bbox_xyxy=(x1, y1, x2, y2),
+                            confidence=confidence
+                        ))
+            
+            print(f"🔍 Google Vision API found {len(words)} words")
+            return OcrResult(words=words, preprocessed_image_path=None)
+            
+        except Exception as e:
+            print(f"⚠️ Google Vision API failed: {e}")
+            return OcrResult(words=[], preprocessed_image_path=None)
+
+    def _do_tesseract_ocr(self, resized: Image.Image, sx: float, sy: float) -> OcrResult:
+        """Helper method to do Tesseract OCR"""
+        import pytesseract as pt
+        # Use tesseract to read words + boxes
+        data = pt.image_to_data(resized, output_type=pt.Output.DICT)
+        words: List[OCRWord] = []
+        n = len(data.get("text", []))
+        for i in range(n):
+            text = (data["text"][i] or "").strip()
+            if not text:
+                continue
+            x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+            x1, y1, x2, y2 = int(x * sx), int(y * sy), int((x + w) * sx), int((y + h) * sy)
+            conf = float(data.get("conf", [0])[i] if isinstance(data.get("conf", None), list) else 0.0)
+            words.append(OCRWord(text=text, bbox_xyxy=(x1, y1, x2, y2), confidence=conf))
+        return OcrResult(words=words, preprocessed_image_path=None)
+
     def recognize(self, image: Image.Image, use_preprocess: bool = True, timeout_s: float = 15.0) -> OcrResult:
-        if self.available():
-            provider = "paddle"
-            self._ensure_loaded()
-            assert self._ocr is not None
-        elif self.tesseract_available():
+        # Try Google Vision API first, then Tesseract as fallback
+        provider = "none"
+        
+        # Debug logging for provider selection
+        google_vision_available = self.google_vision_available()
+        tesseract_available = self.tesseract_available()
+        
+        print(f"[DEBUG] OCR Provider selection:")
+        print(f"[DEBUG]   - Google Vision available: {google_vision_available}")
+        print(f"[DEBUG]   - Tesseract available: {tesseract_available}")
+        print(f"[DEBUG]   - GOOGLE_APPLICATION_CREDENTIALS: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
+        
+        if google_vision_available:
+            provider = "google_vision"
+            print(f"[DEBUG] ✅ Using Google Vision API for OCR")
+        elif tesseract_available:
             provider = "tesseract"
+            print(f"[DEBUG] ⚠️ Google Vision not available, using Tesseract fallback")
         else:
             provider = "none"
+            print(f"[DEBUG] ❌ No OCR providers available")
 
         # Resize for processing and hash cache key
         resized, sx, sy = resize_for_processing(image)
@@ -83,43 +176,19 @@ class PaddleOCRProvider:
             return _OCR_CACHE[cache_key]
 
         def _do_ocr() -> OcrResult:
-            if provider == "paddle":
-                proc_img = resized
-                pre_path: Optional[str] = None
-                if use_preprocess:
-                    proc_img, pre_path = self._preprocess(resized)
-
-                np_img = np.array(proc_img.convert("RGB"))
-                result = self._ocr.ocr(np_img, cls=self.use_angle_cls)
-
-                words: List[OCRWord] = []
-                for page in result or []:
-                    for line in page:
-                        bbox = line[0]
-                        text = line[1][0]
-                        score = float(line[1][1])
-                        xs = [int(pt[0] * sx) for pt in bbox]
-                        ys = [int(pt[1] * sy) for pt in bbox]
-                        xyxy = (min(xs), min(ys), max(xs), max(ys))
-                        if text:
-                            words.append(OCRWord(text=text, bbox_xyxy=xyxy, confidence=score))
-                return OcrResult(words=words, preprocessed_image_path=pre_path)
+            if provider == "google_vision":
+                # Try Google Vision API first
+                result = self._do_google_vision_ocr(resized, sx, sy)
+                
+                # If Google Vision returns no words, fall back to Tesseract
+                if not result.words and self.tesseract_available():
+                    print("⚠️ Google Vision returned 0 words, falling back to Tesseract")
+                    return self._do_tesseract_ocr(resized, sx, sy)
+                
+                return result
 
             if provider == "tesseract":
-                import pytesseract as pt
-                # Use tesseract to read words + boxes
-                data = pt.image_to_data(resized, output_type=pt.Output.DICT)
-                words: List[OCRWord] = []
-                n = len(data.get("text", []))
-                for i in range(n):
-                    text = (data["text"][i] or "").strip()
-                    if not text:
-                        continue
-                    x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
-                    x1, y1, x2, y2 = int(x * sx), int(y * sy), int((x + w) * sx), int((y + h) * sy)
-                    conf = float(data.get("conf", [0])[i] if isinstance(data.get("conf", None), list) else 0.0)
-                    words.append(OCRWord(text=text, bbox_xyxy=(x1, y1, x2, y2), confidence=conf))
-                return OcrResult(words=words, preprocessed_image_path=None)
+                return self._do_tesseract_ocr(resized, sx, sy)
 
             return OcrResult(words=[], preprocessed_image_path=None)
 
@@ -132,8 +201,8 @@ class PaddleOCRProvider:
 
     @staticmethod
     def get_provider_name() -> str:
-        if PaddleOCRProvider.available():
-            return "paddle"
+        if PaddleOCRProvider.google_vision_available():
+            return "google_vision"
         if PaddleOCRProvider.tesseract_available():
             return "tesseract"
         return "none" 

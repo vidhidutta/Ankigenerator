@@ -22,9 +22,22 @@ def find_available_port(start_port=7862):
             continue
     return None
 
+def get_venv_python():
+    """Get the Python interpreter from the virtual environment"""
+    venv_path = os.path.join(os.path.dirname(__file__), 'venv')
+    if os.path.exists(venv_path):
+        venv_python = os.path.join(venv_path, 'bin', 'python')
+        if os.path.exists(venv_python):
+            return venv_python
+    return sys.executable
+
 def main():
     """Main launcher function"""
     print("🚀 Starting Anki Flashcard Generator...")
+    
+    # Get virtual environment Python
+    python_executable = get_venv_python()
+    print(f"🐍 Using Python: {python_executable}")
     
     # Find an available port
     port = find_available_port(7862)
@@ -51,9 +64,9 @@ def main():
         print("📝 Press Ctrl+C to stop the server")
         print("=" * 50)
         
-        # Run the gradio interface
+        # Run the gradio interface with virtual environment Python
         subprocess.run([
-            sys.executable, 'gradio_interface.py'
+            python_executable, 'gradio_interface.py'
         ], env=env, check=True)
         
     except KeyboardInterrupt:

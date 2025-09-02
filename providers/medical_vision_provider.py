@@ -49,7 +49,19 @@ class GoogleMedicalVisionProvider:
     @staticmethod
     def available() -> bool:
         """Check if Google Vision AI is available"""
-        return GOOGLE_VISION_AVAILABLE and bool(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+        has_vision = GOOGLE_VISION_AVAILABLE
+        has_credentials = bool(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+        credentials_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        
+        print(f"[DEBUG] GoogleMedicalVisionProvider.available() check:")
+        print(f"[DEBUG]   - GOOGLE_VISION_AVAILABLE: {has_vision}")
+        print(f"[DEBUG]   - Has credentials env var: {has_credentials}")
+        print(f"[DEBUG]   - Credentials path: {credentials_path}")
+        
+        if credentials_path:
+            print(f"[DEBUG]   - Credentials file exists: {os.path.exists(credentials_path)}")
+        
+        return has_vision and has_credentials
     
     def analyze_medical_image(self, image_path: str) -> List[MedicalTextRegion]:
         """

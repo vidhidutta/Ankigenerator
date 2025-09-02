@@ -56,6 +56,7 @@ from providers.pipeline import detect_segment_rank
 from providers.segment_provider import SAMProvider
 from providers.detect_provider import GroundingDINOProvider
 from providers.vlm_provider import LocalQwen2VLProvider, LocalLLaVAOneVisionProvider, CloudVLMProvider
+from providers.utils import disk_cache_clear, disk_cache_size_bytes
 
 # Alignment mode normalization
 ALLOWED_ALIGNMENT_MODES = {"keyword", "semantic+keyword"}
@@ -295,7 +296,7 @@ def run_flashcard_generation(
     # Normalize alignment mode and prepare warning
     norm_mode, warn = _normalize_alignment_mode(alignment_mode)
     status_msg_warn = warn
-
+    
     # Initialize occluded_path before the try block
     occluded_path = None
 
@@ -309,10 +310,10 @@ def run_flashcard_generation(
             try:
                 candidate = audio_file if isinstance(audio_file, (str, bytes, os.PathLike)) else getattr(audio_file, 'name', None)
                 audio_path = find_audio_file(candidate)
-                if not audio_path:
+            if not audio_path:
                     print(f"[WARN] Could not find audio file in: {candidate}")
-                else:
-                    print(f"[INFO] Using audio file: {audio_path}")
+            else:
+                print(f"[INFO] Using audio file: {audio_path}")
             except Exception as e:
                 print(f"[WARN] Audio path resolution failed: {e}")
                 audio_path = None
@@ -321,10 +322,14 @@ def run_flashcard_generation(
         with tempfile.TemporaryDirectory() as temp_dir:
             # Extract text and images from PowerPoint
             progress(0.1, desc="Extracting content from PowerPoint...")
-            slide_texts = extract_text_from_pptx(pptx_file)
+            try:
+                pptx_path = pptx_file if isinstance(pptx_file, (str, bytes, os.PathLike)) else getattr(pptx_file, 'name', None)
+            except Exception:
+                pptx_path = getattr(pptx_file, 'name', None)
+            slide_texts = extract_text_from_pptx(pptx_path)
             # Extract images if image occlusion is enabled OR OCR is requested
             if enable_image_occlusion or ocr_images_cb:
-                slide_images = extract_images_from_pptx(pptx_file, temp_dir)
+                slide_images = extract_images_from_pptx(pptx_path, temp_dir)
             else:
                 slide_images = []
             
@@ -419,12 +424,20 @@ def run_flashcard_generation(
             # Generate flashcards with progress tracking and audio context
             # Decide whether to generate text/cloze cards based on selected types
             try:
-                allow_text = (not card_types) or any(str(t).lower() in ("basic", "cloze") for t in (card_types or []))
+                # If occlusion is enabled and user didn't explicitly request text cards,
+                # default to occlusion-only to avoid emitting basic cards.
+                if enable_image_occlusion:
+                    if card_types is None:
+                        allow_text = False
+                    else:
+                        allow_text = any(str(t).lower() in ("basic", "cloze") for t in (card_types or []))
+                else:
+                    allow_text = (not card_types) or any(str(t).lower() in ("basic", "cloze") for t in (card_types or []))
             except Exception:
-                allow_text = True
+                allow_text = not enable_image_occlusion
             flashcard_previews = []
             if allow_text:
-                flashcard_previews = generate_enhanced_flashcards_with_progress(
+            flashcard_previews = generate_enhanced_flashcards_with_progress(
                 filtered_slide_texts,
                 filtered_slide_images,  # Use filtered slide images (empty when occlusion disabled)
                 OPENAI_API_KEY,
@@ -526,7 +539,7 @@ def run_flashcard_generation(
                                     if isinstance(c, Flashcard) and c.slide_number in clips_map:
                                         files = clips_map[c.slide_number]
                                         if files:
-                                            c.audio_metadata = AudioMetadataForCard(audio_files=files)
+                                        c.audio_metadata = AudioMetadataForCard(audio_files=files)
                                     if isinstance(c, Flashcard) and c.slide_number in wins_by_id:
                                         try:
                                             c.confidence = float(wins_by_id[c.slide_number].confidence)
@@ -627,8 +640,8 @@ def run_flashcard_generation(
             try:
                 apkg_name = "generated_flashcards.apkg"
                 try:
-                    if pptx_file and getattr(pptx_file, 'name', None):
-                        apkg_name = f"{os.path.splitext(os.path.basename(pptx_file.name))[0]}_flashcards.apkg"
+                    if pptx_path:
+                        apkg_name = f"{os.path.splitext(os.path.basename(pptx_path))[0]}_flashcards.apkg"
                 except Exception:
                     pass
                 # First export to a temp path
@@ -788,7 +801,7 @@ def run_flashcard_generation(
             # Nicely formatted preview lines
             try:
                 from flashcard_generator import Flashcard as _FC
-                for i, preview in enumerate(unique_flashcards[:5]):  # Show first 5
+            for i, preview in enumerate(unique_flashcards[:5]):  # Show first 5
                     if isinstance(preview, _FC):
                         q = (preview.question or '').strip()
                         a = (preview.answer or '').strip()
@@ -802,7 +815,7 @@ def run_flashcard_generation(
                         flashcard_summary += f"\n{i+1}. {preview}\n"
             except Exception:
                 for i, preview in enumerate(unique_flashcards[:5]):
-                    flashcard_summary += f"\n{i+1}. {preview}\n"
+                flashcard_summary += f"\n{i+1}. {preview}\n"
             
             # Append alignment confidence table to the summary if available
             try:
@@ -1137,6 +1150,7 @@ def create_interface():
                             ocr_images_cb = gr.Checkbox(value=True, label="Extract text from images (OCR)")
                             keep_image_only_cb = gr.Checkbox(value=True, label="Always keep image-only slides")
                             ai_image_understanding_cb = gr.Checkbox(value=False, label="Use AI image understanding (OCR + detection + SAM + VLM)", visible=False)
+                            lightweight_mode_cb = gr.Checkbox(value=False, label="Lightweight mode (fast boxes)")
                             clear_cache_btn = gr.Button("Clear cache")
                             # Backward-compatible aliases
                             content_images = img_src
@@ -1204,8 +1218,30 @@ def create_interface():
                         )
                         gr.HTML('<div style="margin-top: 10px; color: #888; font-size: 12px;">The APKG file will appear here after generation. Click to download.</div>')
 
-            # (Removed occlusion review/edit UI)
- 
+            # Image Occlusion Review Panel
+            with gr.Row():
+                gr.HTML('<div style="font-weight: bold; font-size: 16px; margin: 12px 0;">Image Occlusion Review</div>')
+            with gr.Row():
+                with gr.Column(scale=1):
+                    occl_image_dd = gr.Dropdown(label="Slide image", choices=[], interactive=True)
+                    cached_badge = gr.HTML(value="", label="Cache")
+                    refresh_occl_btn = gr.Button("Refresh occlusion list")
+                    mask_opacity = gr.Slider(minimum=0.2, maximum=1.0, value=0.9, step=0.05, label="Mask opacity")
+                    with gr.Row():
+                        preview_masked_btn = gr.Button("Preview masked")
+                        show_original_btn = gr.Button("Show original")
+                        export_selected_btn = gr.Button("Export selected occlusions")
+                with gr.Column(scale=3):
+                    occl_preview = gr.Image(label="Preview", interactive=False)
+                    occl_df = gr.Dataframe(
+                        headers=["Keep", "Label", "Rationale", "Importance", "Area", "x1", "y1", "x2", "y2"],
+                        datatype=["bool", "str", "str", "number", "number", "number", "number", "number", "number"],
+                        row_count=(0, "dynamic"),
+                        col_count=9,
+                        label="Proposed occlusions",
+                        interactive=True,
+                    )
+            
             # Footer
             gr.HTML("""
             <div class="footer">
@@ -1259,6 +1295,9 @@ def create_interface():
             label="Medical Vision AI Status"
         )
 
+        # Shared state for occlusion proposals
+        occl_state = gr.State({"images": [], "proposals": {}, "cached_images": set()})
+
         # Update the function to receive the new parameter structure
         def run_flashcard_generation_updated(
             pptx_file,
@@ -1274,6 +1313,7 @@ def create_interface():
             use_emphasis_cb,
             ocr_images_cb,
             keep_image_only_cb,
+            lightweight_mode_cb,
             ai_image_understanding_cb,
             alignment_mode,
             diarization_cb,
@@ -1358,7 +1398,7 @@ def create_interface():
                                             ])
                                         proposals[ip] = rows
                                         print(f"[INFO] Medical Vision AI found {len(rows)} testable regions in {os.path.basename(ip)}")
-                                    except Exception as e:
+            except Exception as e:
                                         print(f"[WARN] Medical Vision AI failed for {ip}: {e}")
                                         continue
                             else:
@@ -1372,7 +1412,8 @@ def create_interface():
                         proposals = {}
                         for ip in flat_imgs[:50]:
                             try:
-                                if heavy_available:
+                                use_lightweight = bool(lightweight_mode_cb) or not heavy_available
+                                if not use_lightweight:
                                     regs = detect_segment_rank(ip, slide_text="", transcript_text="", )
                                     rows = []
                                     for ridx, r in enumerate(regs):
@@ -1402,6 +1443,7 @@ def create_interface():
                             summary or "",
                             status or "",
                             apkg_path,
+                            state,
                         )
                 except Exception:
                     state = {"images": [], "proposals": {}, "cached_images": set()}
@@ -1416,11 +1458,12 @@ def create_interface():
                     summary or "",
                     status or "",
                     apkg_path,
+                    state,
                 ]
                 return tuple(outputs)
             except Exception as e:
                 msg = f"⚠️ Error: {e}"
-                return msg, msg, None
+                return msg, msg, None, {"images": [], "proposals": {}, "cached_images": set()}
 
         # Update the function call to use the new parameters
         generate_btn.click(
@@ -1439,6 +1482,7 @@ def create_interface():
                 use_emphasis_cb,
                 ocr_images_cb,
                 keep_image_only_cb,
+                lightweight_mode_cb,
                 ai_image_understanding_cb,
                 alignment_mode,
                 diarization_cb,
@@ -1451,26 +1495,100 @@ def create_interface():
                 status_output,
                 flashcard_output,
                 apkg_file,
+                occl_state,
             ]
         )
 
-        # (occlusion review helpers removed)
+        def _draw_annotated(image_path, rows):
+            try:
+                im = Image.open(image_path).convert("RGB")
+                draw = ImageDraw.Draw(im)
+                for idx, r in enumerate(rows):
+                    try:
+                        x1, y1, x2, y2 = int(r[5]), int(r[6]), int(r[7]), int(r[8])
+                        draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
+                        draw.text((x1 + 3, y1 + 3), f"#{idx+1}", fill=(255, 0, 0))
+                    except Exception:
+                        continue
+                return im
+            except Exception:
+                return None
 
-        # (occlusion review helpers removed)
+        def occl_refresh(state):
+            try:
+                imgs = state.get("images", []) if isinstance(state, dict) else []
+                first = imgs[0] if imgs else None
+                return gr.update(choices=imgs, value=first), f"Loaded {len(imgs)} images for review"
+            except Exception:
+                return gr.update(choices=[], value=None), "No images to review"
 
-        # (occlusion review components removed)
+        def occl_on_image_change(image_path, state):
+            try:
+                props = state.get("proposals", {}) if isinstance(state, dict) else {}
+                rows = props.get(image_path, [])
+                badge = "<span style=\"color:#0a0; font-weight:600;\">cached</span>" if image_path in (state.get("cached_images") or set()) else ""
+                annotated = _draw_annotated(image_path, rows) if image_path else None
+                return badge, annotated, rows
+            except Exception:
+                return "", None, []
 
-        # (occlusion review helpers removed)
+        def occl_preview_masked(image_path, rows, opacity):
+            try:
+                if not image_path:
+                    return None
+                im = Image.open(image_path).convert("RGBA")
+                overlay = Image.new("RGBA", im.size, (0, 0, 0, 0))
+                o = ImageDraw.Draw(overlay)
+                alpha = max(0, min(255, int(255 * float(opacity))))
+                for r in rows or []:
+                    try:
+                        if not r[0]:
+                            continue
+                        x1, y1, x2, y2 = int(r[5]), int(r[6]), int(r[7]), int(r[8])
+                        o.rectangle([x1, y1, x2, y2], fill=(0, 0, 0, alpha))
+                    except Exception:
+                        continue
+                return Image.alpha_composite(im, overlay).convert("RGB")
+            except Exception:
+                return None
 
-        # (occlusion review components removed)
+        def occl_show_original(image_path):
+            try:
+                return Image.open(image_path).convert("RGB") if image_path else None
+            except Exception:
+                return None
 
-        # (occlusion review helpers removed)
+        def occl_export(image_path, rows):
+            try:
+                if not image_path:
+                    return "No image selected", None
+                from providers.types import Region
+                regs = []
+                for r in rows or []:
+                    try:
+                        if not r[0]:
+                            continue
+                        x1, y1, x2, y2 = int(r[5]), int(r[6]), int(r[7]), int(r[8])
+                        regs.append(Region(term=r[1] or "", score=float(r[3] or 0.5), bbox_xyxy=(x1, y1, x2, y2), mask_rle=None, polygon=None, area_px=max(1, (x2 - x1) * (y2 - y1))))
+                    except Exception:
+                        continue
+                if not regs:
+                    return "No rows selected", None
+                tmpdir = tempfile.mkdtemp()
+                items = build_occlusion_items_for_image(image_path, regs, output_dir=tmpdir)
+                if not items:
+                    return "No occlusions built", None
+                out_apkg = os.path.join(tmpdir, "selected_occlusions.apkg")
+                export_flashcards_to_apkg(items, out_apkg)
+                return f"Exported {len(items)} occlusions", out_apkg
+            except Exception as e:
+                return f"Export failed: {e}", None
 
-        # (occlusion review components removed)
-
-        # (occlusion review helpers removed)
-
-        # (occlusion review components removed)
+        refresh_occl_btn.click(fn=occl_refresh, inputs=[occl_state], outputs=[occl_image_dd, status_output])
+        occl_image_dd.change(fn=occl_on_image_change, inputs=[occl_image_dd, occl_state], outputs=[cached_badge, occl_preview, occl_df])
+        preview_masked_btn.click(fn=occl_preview_masked, inputs=[occl_image_dd, occl_df, mask_opacity], outputs=[occl_preview])
+        show_original_btn.click(fn=occl_show_original, inputs=[occl_image_dd], outputs=[occl_preview])
+        export_selected_btn.click(fn=occl_export, inputs=[occl_image_dd, occl_df], outputs=[status_output, apkg_file])
 
         # (occlusion review helpers removed)
 
@@ -1493,10 +1611,17 @@ def create_interface():
                 segp._SEG_CACHE.clear()
             except Exception:
                 pass
-            return "Caches cleared"
+            # Clear disk cache
+            try:
+                before = disk_cache_size_bytes()
+                disk_cache_clear()
+                after = disk_cache_size_bytes()
+                return f"Caches cleared (disk: {before} → {after} bytes)"
+            except Exception:
+                return "Caches cleared"
 
         clear_cache_btn.click(fn=clear_cache, inputs=[], outputs=[status_output])
- 
+        
     return interface
 
 if __name__ == "__main__":

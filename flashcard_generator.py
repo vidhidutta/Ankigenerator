@@ -740,11 +740,19 @@ def export_flashcards_to_apkg(flashcards, output_path='flashcards.apkg', pptx_fi
                     print(f"[WARN] Skipping invalid flashcard: answer image path is directory - {entry}")
                     continue
                 
-                qfile = os.path.basename(entry['question_image_path'])
-                afile = os.path.basename(entry['answer_image_path'])
-
-                # Track media files
-                media.extend([entry['question_image_path'], entry['answer_image_path']])
+                # Handle both file paths and Base64 encoded images
+                if 'question_image_base64' in entry and 'answer_image_base64' in entry:
+                    # Use Base64 encoded images
+                    qfile = f"data:image/png;base64,{entry['question_image_base64']}"
+                    afile = f"data:image/png;base64,{entry['answer_image_base64']}"
+                    print(f"[DEBUG] Using Base64 encoded images for image occlusion card")
+                else:
+                    # Use file paths (legacy support)
+                    qfile = os.path.basename(entry['question_image_path'])
+                    afile = os.path.basename(entry['answer_image_path'])
+                    # Track media files
+                    media.extend([entry['question_image_path'], entry['answer_image_path']])
+                    print(f"[DEBUG] Using file paths for image occlusion card")
 
                 # Audio embedding for dict entries if provided
                 audio_field = ""
@@ -1829,6 +1837,8 @@ def is_image_relevant_for_occlusion(image_path: str, slide_text: str, api_key: s
         True if the image contains relevant medical/clinical content for occlusion
 """
     try:
+        print(f"[DEBUG] is_image_relevant_for_occlusion called for: {os.path.basename(image_path)}")
+        
         # Check if the path is actually a file
         if not os.path.isfile(image_path):
             print(f"[WARN] Skipping image relevance check for {image_path}: not a file")
@@ -1891,6 +1901,7 @@ def is_image_relevant_for_occlusion(image_path: str, slide_text: str, api_key: s
         )
         
         result = response.choices[0].message.content.strip().upper()
+        print(f"[DEBUG] Vision API response for {os.path.basename(image_path)}: {result}")
         
         # Parse the response
         if result.startswith("RELEVANT"):
@@ -1919,17 +1930,25 @@ def filter_relevant_images_for_occlusion(slide_images: List[List[str]], slide_te
     Returns:
         Filtered list of relevant images for each slide
     """
+    print(f"[DEBUG] filter_relevant_images_for_occlusion called with {len(slide_images)} slides")
+    
     if not slide_images or not slide_texts:
+        print(f"[DEBUG] No slide images or texts provided: images={len(slide_images) if slide_images else 0}, texts={len(slide_texts) if slide_texts else 0}")
         return slide_images
     
     filtered_images = []
     
     for slide_idx, (images, slide_text) in enumerate(zip(slide_images, slide_texts)):
+        print(f"[DEBUG] Processing slide {slide_idx + 1}: {len(images)} images, text length: {len(slide_text)}")
         relevant_images = []
         
         for image_path in images:
+            print(f"[DEBUG] Checking image relevance: {os.path.basename(image_path)}")
             if is_image_relevant_for_occlusion(image_path, slide_text, api_key, model):
                 relevant_images.append(image_path)
+                print(f"[DEBUG] ✅ Image {os.path.basename(image_path)} deemed relevant")
+            else:
+                print(f"[DEBUG] ❌ Image {os.path.basename(image_path)} filtered out")
         
         filtered_images.append(relevant_images)
         
@@ -1938,6 +1957,8 @@ def filter_relevant_images_for_occlusion(slide_images: List[List[str]], slide_te
         elif images:
             print(f"📝 Slide {slide_idx + 1}: {len(relevant_images)}/{len(images)} images deemed relevant")
     
+    total_relevant = sum(len(images) for images in filtered_images)
+    print(f"[DEBUG] Total relevant images found: {total_relevant}")
     return filtered_images
 
 def export_occlusion_flashcards_to_csv(flashcard_entries, csv_path):

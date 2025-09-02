@@ -1,0 +1,391 @@
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 54 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 75 65461
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 2678 469
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 3159 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64683
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_p980sgkm_input.PNG', '/tmp/tess_p980sgkm', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:pytesseract:['tesseract', '/tmp/tess_maryyr5c_input.PNG', '/tmp/tess_maryyr5c', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 54 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 75 65461
+DEBUG:pytesseract:['tesseract', '/tmp/tess_btc6udp3_input.PNG', '/tmp/tess_btc6udp3', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:pytesseract:['tesseract', '/tmp/tess_8rbr9j_o_input.PNG', '/tmp/tess_8rbr9j_o', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_zhoh7fdj_input.PNG', '/tmp/tess_zhoh7fdj', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_auy53ii5_input.PNG', '/tmp/tess_auy53ii5', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_3v95j3st_input.PNG', '/tmp/tess_3v95j3st', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_ft3v24vf_input.PNG', '/tmp/tess_ft3v24vf', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_shtgcf9f_input.PNG', '/tmp/tess_shtgcf9f', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_etijtk0i_input.PNG', '/tmp/tess_etijtk0i', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_4uduebrw_input.PNG', '/tmp/tess_4uduebrw', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_201lm8t1_input.PNG', '/tmp/tess_201lm8t1', 'txt']
+DEBUG:pytesseract:['tesseract', '/tmp/tess_d9ijvfbq_input.JPEG', '/tmp/tess_d9ijvfbq', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 2678 469
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 3159 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_esurb_ej_input.PNG', '/tmp/tess_esurb_ej', 'txt']
+DEBUG:pytesseract:['tesseract', '/tmp/tess_dau1fdaq_input.JPEG', '/tmp/tess_dau1fdaq', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_lsh0lovy_input.PNG', '/tmp/tess_lsh0lovy', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_d632edgz_input.PNG', '/tmp/tess_d632edgz', 'txt']
+DEBUG:pytesseract:['tesseract', '/tmp/tess_3n28pdfk_input.JPEG', '/tmp/tess_3n28pdfk', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64683
+DEBUG:pytesseract:['tesseract', '/tmp/tess_j2_jfsrd_input.PNG', '/tmp/tess_j2_jfsrd', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:pytesseract:['tesseract', '/tmp/tess__bno4a9g_input.PNG', '/tmp/tess__bno4a9g', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:pytesseract:['tesseract', '/tmp/tess_n79v4a7u_input.PNG', '/tmp/tess_n79v4a7u', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:pytesseract:['tesseract', '/tmp/tess_nnoavabw_input.PNG', '/tmp/tess_nnoavabw', 'txt']
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 54 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 75 65461
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64940
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 6221
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 6274 413
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 5807
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 5860 415
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 6287 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'iTXt' 2678 469
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 3159 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 64683
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'sRGB' 41 1
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 54 65482
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'iCCP' 41 2625
+DEBUG:PIL.PngImagePlugin:iCCP profile name b'ICC Profile'
+DEBUG:PIL.PngImagePlugin:Compression method 0
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 2678 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 2699 16384
+DEBUG:root:[DEBUG] Generated flashcard entries: [{'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide6_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide7_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide8_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide12_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide13_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide15_img2_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide17_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide19_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide20_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide21_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide22_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide26_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide29_img2_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide48_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide48_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide49_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide49_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide49_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide49_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img1_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img6_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_0_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_1_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_1_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_2_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_2_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_3_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide54_img7_3_o.png', 'alt_text': 'What is hidden here?'}, {'question_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide55_img1_0_q.png', 'answer_image_path': '/tmp/tmpljsal6jg/occlusion_flashcards/slide55_img1_0_o.png', 'alt_text': 'What is hidden here?'}]
+DEBUG:root:[DEBUG] Added 68 valid image occlusion flashcards to main list
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): huggingface.co:443
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:httpcore.connection:connect_tcp.started host='api.gradio.app' port=443 local_address=None timeout=3 socket_options=None
+DEBUG:httpcore.connection:connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f684a7f25d0>
+DEBUG:httpcore.connection:start_tls.started ssl_context=<ssl.SSLContext object at 0x7f684a774710> server_hostname='api.gradio.app' timeout=3
+DEBUG:urllib3.connectionpool:https://huggingface.co:443 "HEAD /api/telemetry/gradio/initiated HTTP/1.1" 200 0
+DEBUG:httpcore.connection:start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f684a721f90>
+DEBUG:httpcore.http11:send_request_headers.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_headers.complete
+DEBUG:httpcore.http11:send_request_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_body.complete
+DEBUG:httpcore.http11:receive_response_headers.started request=<Request [b'GET']>
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:httpcore.http11:receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Mon, 01 Sep 2025 11:37:53 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'21'), (b'Connection', b'keep-alive'), (b'Server', b'nginx/1.18.0'), (b'Access-Control-Allow-Origin', b'*')])
+INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+DEBUG:httpcore.http11:receive_response_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:receive_response_body.complete
+DEBUG:httpcore.http11:response_closed.started
+DEBUG:httpcore.http11:response_closed.complete
+DEBUG:httpcore.connection:close.started
+DEBUG:httpcore.connection:close.complete
+DEBUG:httpcore.connection:connect_tcp.started host='localhost' port=7865 local_address=None timeout=None socket_options=None
+DEBUG:httpcore.connection:connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6843fbbe10>
+DEBUG:httpcore.http11:send_request_headers.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_headers.complete
+DEBUG:httpcore.http11:send_request_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_body.complete
+DEBUG:httpcore.http11:receive_response_headers.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Mon, 01 Sep 2025 11:37:53 GMT'), (b'server', b'uvicorn'), (b'content-length', b'4'), (b'content-type', b'application/json')])
+INFO:httpx:HTTP Request: GET http://localhost:7865/gradio_api/startup-events "HTTP/1.1 200 OK"
+DEBUG:httpcore.http11:receive_response_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:receive_response_body.complete
+DEBUG:httpcore.http11:response_closed.started
+DEBUG:httpcore.http11:response_closed.complete
+DEBUG:httpcore.connection:close.started
+DEBUG:httpcore.connection:close.complete
+DEBUG:httpcore.connection:connect_tcp.started host='localhost' port=7865 local_address=None timeout=3 socket_options=None
+DEBUG:httpcore.connection:connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f68439b4290>
+DEBUG:httpcore.http11:send_request_headers.started request=<Request [b'HEAD']>
+DEBUG:httpcore.http11:send_request_headers.complete
+DEBUG:httpcore.http11:send_request_body.started request=<Request [b'HEAD']>
+DEBUG:httpcore.http11:send_request_body.complete
+DEBUG:httpcore.http11:receive_response_headers.started request=<Request [b'HEAD']>
+DEBUG:httpcore.http11:receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Mon, 01 Sep 2025 11:37:53 GMT'), (b'server', b'uvicorn'), (b'content-length', b'100178'), (b'content-type', b'text/html; charset=utf-8')])
+INFO:httpx:HTTP Request: HEAD http://localhost:7865/ "HTTP/1.1 200 OK"
+DEBUG:httpcore.http11:receive_response_body.started request=<Request [b'HEAD']>
+DEBUG:httpcore.http11:receive_response_body.complete
+DEBUG:httpcore.http11:response_closed.started
+DEBUG:httpcore.http11:response_closed.complete
+DEBUG:httpcore.connection:close.started
+DEBUG:httpcore.connection:close.complete
+DEBUG:httpcore.connection:connect_tcp.started host='api.gradio.app' port=443 local_address=None timeout=30 socket_options=None
+DEBUG:httpcore.connection:connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6841830f50>
+DEBUG:httpcore.connection:start_tls.started ssl_context=<ssl.SSLContext object at 0x7f6843994830> server_hostname='api.gradio.app' timeout=30
+DEBUG:httpcore.connection:start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6841830fd0>
+DEBUG:httpcore.http11:send_request_headers.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_headers.complete
+DEBUG:httpcore.http11:send_request_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:send_request_body.complete
+DEBUG:httpcore.http11:receive_response_headers.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Mon, 01 Sep 2025 11:37:54 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'nginx/1.18.0'), (b'ContentType', b'application/json'), (b'Access-Control-Allow-Origin', b'*'), (b'Content-Encoding', b'gzip')])
+INFO:httpx:HTTP Request: GET https://api.gradio.app/v3/tunnel-request "HTTP/1.1 200 OK"
+DEBUG:httpcore.http11:receive_response_body.started request=<Request [b'GET']>
+DEBUG:httpcore.http11:receive_response_body.complete
+DEBUG:httpcore.http11:response_closed.started
+DEBUG:httpcore.http11:response_closed.complete
+DEBUG:httpcore.connection:close.started
+DEBUG:httpcore.connection:close.complete
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): huggingface.co:443
+DEBUG:urllib3.connectionpool:https://huggingface.co:443 "HEAD /api/telemetry/gradio/launched HTTP/1.1" 200 0

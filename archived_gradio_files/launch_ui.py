@@ -7,6 +7,15 @@ import subprocess
 import sys
 import os
 
+def get_venv_python():
+    """Get the Python interpreter from the virtual environment"""
+    venv_path = os.path.join(os.path.dirname(__file__), 'venv')
+    if os.path.exists(venv_path):
+        venv_python = os.path.join(venv_path, 'bin', 'python')
+        if os.path.exists(venv_python):
+            return venv_python
+    return sys.executable
+
 def main():
     print("🧠 Medical Flashcard Generator UI")
     print("=" * 40)
@@ -16,6 +25,10 @@ def main():
         print("❌ Error: gradio_interface.py not found in current directory")
         print("Please run this script from the anki-flashcard-generator directory")
         sys.exit(1)
+    
+    # Get virtual environment Python
+    python_executable = get_venv_python()
+    print(f"🐍 Using Python: {python_executable}")
     
     # Check if virtual environment is activated
     if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
@@ -38,8 +51,8 @@ def main():
     print()
     
     try:
-        # Launch the Gradio interface
-        subprocess.run([sys.executable, "gradio_interface.py"])
+        # Launch the Gradio interface with virtual environment Python
+        subprocess.run([python_executable, "gradio_interface.py"])
     except KeyboardInterrupt:
         print("\n👋 Interface stopped by user")
     except Exception as e:

@@ -55,15 +55,19 @@ class GroundingDINOProvider:
 
     @staticmethod
     def available() -> bool:
-        # Require the 'groundingdino_pytorch' convenience wrapper
-        return importlib.util.find_spec("groundingdino_pytorch") is not None
+        # Check if groundingdino is available
+        try:
+            from groundingdino.models.GroundingDINO.groundingdino import GroundingDINO
+            return True
+        except ImportError:
+            return False
 
     def _ensure_loaded(self) -> None:
         if self._model is None:
             try:
-                from groundingdino_pytorch import GroundingDINO as GDINO  # type: ignore
+                from groundingdino.models.GroundingDINO.groundingdino import GroundingDINO as GDINO
             except Exception:
-                from groundingdino_pytorch.groundingdino import GroundingDINO as GDINO  # type: ignore
+                raise ImportError("GroundingDINO not available")
             self._model = GDINO(device=self.device)
 
     def detect_terms(
