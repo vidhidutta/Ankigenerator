@@ -66,3 +66,4 @@ async function convert(file) {
 ## Swap in your real generator
 
 Edit `app/pipeline.py` → implement `run_pipeline(input_path) -> (apkg_path, csv_path)`.
+# Force deployment Tue Sep  2 12:02:41 PM BST 2025
